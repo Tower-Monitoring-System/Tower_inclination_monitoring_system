@@ -93,14 +93,6 @@ button {
   text-transform: uppercase;
 }
 
-.system-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--success);
-  box-shadow: 0 0 0 5px rgba(114, 229, 179, 0.1), 0 0 16px var(--success);
-}
-
 .system-overview h1 {
   max-width: 650px;
   margin: 0;
