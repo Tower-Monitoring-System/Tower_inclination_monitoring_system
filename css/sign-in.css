@@ -42,7 +42,7 @@ body {
   background-image:
     linear-gradient(90deg, rgba(4, 14, 24, 0.92) 0%, rgba(4, 14, 24, 0.5) 48%, rgba(4, 14, 24, 0.72) 100%),
     linear-gradient(180deg, rgba(3, 11, 19, 0.18), rgba(3, 11, 19, 0.76)),
-    url("../assets/background/background_sign_in.jpg");
+    url("../assets/background/background_dashboard2.jpg");
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
@@ -75,10 +75,6 @@ button {
   max-width: 610px;
   padding-left: clamp(0px, 3vw, 42px);
   filter: drop-shadow(0 12px 35px rgba(0, 0, 0, 0.3));
-  /* Đưa toàn bộ khối bên trái đẩy lên sát đỉnh */
-  align-self: flex-start; 
-  /* Hoặc tự chỉnh khoảng cách tính từ đỉnh xuống */
-  margin-top: 10vh;
 }
 
 .system-status {

@@ -4,196 +4,406 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Tower Inclination Monitoring System Dashboard" />
-  <meta name="theme-color" content="#08111f" />
+  <meta name="theme-color" content="#082d57" />
   <title>Dashboard | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./css/style.css" />
   <script src="./js/auth-config.js"></script>
   <script src="./js/auth.js"></script>
 </head>
-<body data-page="dashboard">
-  <main class="main">
-    <header class="topbar">
-      <div class="dashboard-brand">
+<body class="dashboard-loading" data-page="dashboard">
+  <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
+
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="icon-grid" viewBox="0 0 24 24">
+      <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+      <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+      <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+      <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+    </symbol>
+    <symbol id="icon-tower" viewBox="0 0 24 24">
+      <path d="M8 21 12 3l4 18M9 8h6M8 13h8M6 21h12M9 17l6-4M15 17l-6-4"></path>
+    </symbol>
+    <symbol id="icon-alert" viewBox="0 0 24 24">
+      <path d="M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z"></path>
+      <path d="M12 8v5m0 3.5v.01"></path>
+    </symbol>
+    <symbol id="icon-chart" viewBox="0 0 24 24">
+      <path d="M4 19V5m0 14h16"></path>
+      <path d="m7 15 4-4 3 2 5-6"></path>
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"></path>
+    </symbol>
+    <symbol id="icon-menu" viewBox="0 0 24 24">
+      <path d="M4 7h16M4 12h16M4 17h16"></path>
+    </symbol>
+    <symbol id="icon-search" viewBox="0 0 24 24">
+      <circle cx="11" cy="11" r="7"></circle>
+      <path d="m20 20-4-4"></path>
+    </symbol>
+    <symbol id="icon-bell" viewBox="0 0 24 24">
+      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"></path>
+    </symbol>
+    <symbol id="icon-help" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="M9.7 9a2.5 2.5 0 1 1 3.1 2.4c-.8.3-.8.9-.8 1.6m0 3.5v.01"></path>
+    </symbol>
+    <symbol id="icon-chevron" viewBox="0 0 24 24">
+      <path d="m9 18 6-6-6-6"></path>
+    </symbol>
+    <symbol id="icon-refresh" viewBox="0 0 24 24">
+      <path d="M20 6v5h-5M4 18v-5h5"></path>
+      <path d="M18.5 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 1.8A7 7 0 0 1 5.5 15"></path>
+    </symbol>
+    <symbol id="icon-calendar" viewBox="0 0 24 24">
+      <rect x="3" y="5" width="18" height="16" rx="2"></rect>
+      <path d="M7 3v4m10-4v4M3 10h18"></path>
+    </symbol>
+    <symbol id="icon-signal" viewBox="0 0 24 24">
+      <path d="M4.9 9.9a10 10 0 0 1 14.2 0M7.8 12.8a6 6 0 0 1 8.4 0M10.6 15.6a2 2 0 0 1 2.8 0"></path>
+      <circle cx="12" cy="19" r="1"></circle>
+    </symbol>
+    <symbol id="icon-shield" viewBox="0 0 24 24">
+      <path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Z"></path>
+      <path d="m9 12 2 2 4-4"></path>
+    </symbol>
+    <symbol id="icon-logout" viewBox="0 0 24 24">
+      <path d="M10 17l5-5-5-5m5 5H3"></path>
+      <path d="M14 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"></path>
+    </symbol>
+    <symbol id="icon-check" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"></circle>
+      <path d="m8 12 2.5 2.5L16 9"></path>
+    </symbol>
+    <symbol id="icon-download" viewBox="0 0 24 24">
+      <path d="M12 3v12m-4-4 4 4 4-4M5 21h14"></path>
+    </symbol>
+  </svg>
+
+  <div class="app-shell" id="appShell">
+    <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
+      <div class="sidebar-brand">
         <img src="./assets/logo.svg" alt="" width="48" height="48" />
-        <div>
-          <p class="eyebrow">Engineering monitoring platform</p>
-          <h1>Tower Inclination Monitoring System</h1>
-          <p class="subtitle">Live structural condition and station telemetry</p>
+        <div class="sidebar-brand-copy">
+          <strong>TowerWatch</strong>
+          <span>Inclination Monitor</span>
         </div>
       </div>
 
-      <div class="topbar-actions">
-        <div class="live-pill">
-          <span class="pulse"></span>
-          LIVE
-        </div>
-
-        <div class="clock-card">
-          <span id="currentDate">--</span>
-          <strong id="currentTime">--:--:--</strong>
-        </div>
-
-        <div class="operator-card">
-          <span class="operator-avatar" aria-hidden="true">A</span>
-          <div>
-            <span>Signed in as</span>
-            <strong data-auth-username>Operator</strong>
-          </div>
-        </div>
-
-        <button
-          class="sign-out-button"
-          type="button"
-          data-action="sign-out"
-          aria-label="Sign out of the monitoring system"
-        >
-          <img src="./assets/icon/icon_logout.png" alt="" width="17" height="17" />
-          <span>Sign out</span>
+      <nav class="sidebar-nav" aria-label="System modules">
+        <p class="nav-section-label">Monitoring</p>
+        <button class="nav-item is-active" type="button" data-nav-target="Overview" aria-current="page">
+          <svg aria-hidden="true"><use href="#icon-grid"></use></svg>
+          <span>Overview</span>
         </button>
+        <button class="nav-item" type="button" data-nav-target="Tower registry">
+          <svg aria-hidden="true"><use href="#icon-tower"></use></svg>
+          <span>Towers</span>
+          <small id="sidebarTowerCount">8</small>
+        </button>
+        <button class="nav-item" type="button" data-nav-target="Alerts center">
+          <svg aria-hidden="true"><use href="#icon-alert"></use></svg>
+          <span>Alerts</span>
+          <small class="nav-alert-count" id="sidebarAlertCount">2</small>
+        </button>
+        <button class="nav-item" type="button" data-nav-target="Analytics">
+          <svg aria-hidden="true"><use href="#icon-chart"></use></svg>
+          <span>Analytics</span>
+        </button>
+
+        <p class="nav-section-label nav-section-secondary">Management</p>
+        <button class="nav-item" type="button" data-nav-target="System settings">
+          <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
+          <span>System settings</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="gateway-status">
+          <span class="gateway-icon" aria-hidden="true">
+            <svg><use href="#icon-signal"></use></svg>
+          </span>
+          <div>
+            <strong>Gateway online</strong>
+            <span>LoRa network stable</span>
+          </div>
+          <i aria-hidden="true"></i>
+        </div>
+
+        <div class="sidebar-account">
+          <span class="user-avatar" data-user-initial aria-hidden="true">O</span>
+          <div>
+            <strong data-auth-username>Operator</strong>
+            <span>System operator</span>
+          </div>
+          <button type="button" data-action="sign-out" aria-label="Sign out">
+            <svg aria-hidden="true"><use href="#icon-logout"></use></svg>
+          </button>
+        </div>
       </div>
-    </header>
+    </aside>
 
-    <section class="dashboard">
-      <div class="summary-grid">
-        <article class="metric-card">
-          <span class="metric-label">Monitored Stations</span>
-          <strong class="metric-value" id="stationCount">4</strong>
-          <span class="metric-note positive">All devices reporting</span>
-        </article>
+    <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="Close navigation menu"></button>
 
-        <article class="metric-card">
-          <span class="metric-label">Max. Tilt Angle</span>
-          <strong class="metric-value"><span id="maxTilt">2.8</span>°</strong>
-          <span class="metric-note">Critical threshold: 5.0°</span>
-        </article>
+    <div class="app-main">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button
+            class="icon-button menu-button"
+            id="menuButton"
+            type="button"
+            aria-label="Toggle navigation menu"
+            aria-controls="sidebar"
+            aria-expanded="false"
+          >
+            <svg aria-hidden="true"><use href="#icon-menu"></use></svg>
+          </button>
+          <div class="topbar-heading">
+            <strong>Tower Inclination Monitoring System</strong>
+            <span>Structural safety operations</span>
+          </div>
+        </div>
 
-        <article class="metric-card">
-          <span class="metric-label">Active Alerts</span>
-          <strong class="metric-value" id="activeAlertCount">1</strong>
-          <span class="metric-note warning">Requires attention</span>
-        </article>
-
-        <article class="metric-card">
-          <span class="metric-label">LoRa Link Quality</span>
-          <strong class="metric-value"><span id="avgRssi">-71</span> dBm</strong>
-          <span class="metric-note positive">Stable connection</span>
-        </article>
-      </div>
-
-      <div class="dashboard-grid">
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <p class="panel-kicker">TREND</p>
-              <h2>Tilt Angle History</h2>
+        <div class="topbar-actions">
+          <div class="header-search" id="headerSearch">
+            <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+            <label class="sr-only" for="globalSearch">Search towers</label>
+            <input id="globalSearch" type="search" placeholder="Search tower or location" autocomplete="off" />
+            <button class="search-close" id="searchClose" type="button" aria-label="Close search">×</button>
+          </div>
+          <button class="icon-button" id="searchButton" type="button" aria-label="Search towers">
+            <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+          </button>
+          <button class="icon-button" id="helpButton" type="button" aria-label="Open help">
+            <svg aria-hidden="true"><use href="#icon-help"></use></svg>
+          </button>
+          <button class="icon-button notification-button" id="notificationButton" type="button" aria-label="View 2 active notifications">
+            <svg aria-hidden="true"><use href="#icon-bell"></use></svg>
+            <span id="notificationCount">2</span>
+          </button>
+          <div class="account-menu-wrap">
+            <button class="account-button" id="accountButton" type="button" aria-haspopup="menu" aria-expanded="false">
+              <span class="user-avatar" data-user-initial aria-hidden="true">O</span>
+              <span class="account-copy">
+                <strong data-auth-username>Operator</strong>
+                <small>Operator</small>
+              </span>
+              <svg class="account-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+            </button>
+            <div class="account-dropdown" id="accountDropdown" role="menu" hidden>
+              <div>
+                <span class="user-avatar" data-user-initial aria-hidden="true">O</span>
+                <p><strong data-auth-username>Operator</strong><span>Authenticated session</span></p>
+              </div>
+              <button type="button" role="menuitem" data-action="sign-out">
+                <svg aria-hidden="true"><use href="#icon-logout"></use></svg>
+                Sign out
+              </button>
             </div>
+          </div>
+        </div>
+      </header>
 
-            <div class="legend">
-              <span><i class="legend-dot x"></i>X-axis</span>
-              <span><i class="legend-dot y"></i>Y-axis</span>
+      <main class="dashboard-content" id="dashboardContent" tabindex="-1">
+        <section class="page-intro" aria-labelledby="pageTitle">
+          <div>
+            <p class="eyebrow"><span aria-hidden="true"></span> Live monitoring</p>
+            <h1 id="pageTitle">System overview</h1>
+            <p>Track tower inclination, sensor health, and structural alerts in real time.</p>
+          </div>
+          <div class="page-actions">
+            <div class="last-sync-summary">
+              <span>Last synchronized</span>
+              <strong id="lastSyncHeader">Just now</strong>
+            </div>
+            <button class="secondary-button" id="exportButton" type="button">
+              <svg aria-hidden="true"><use href="#icon-download"></use></svg>
+              Export
+            </button>
+            <button class="primary-button" id="refreshButton" type="button">
+              <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+              <span>Refresh data</span>
+            </button>
+          </div>
+        </section>
+
+        <section class="summary-grid" aria-label="System summary">
+          <article class="metric-card metric-towers">
+            <div class="metric-header">
+              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-tower"></use></svg></span>
+              <span class="metric-trend positive">+2.4%</span>
+            </div>
+            <p>Total towers</p>
+            <strong class="metric-value" id="totalTowerCount">8</strong>
+            <div class="metric-breakdown">
+              <span><i class="status-dot normal"></i><b id="onlineTowerCount">7</b> Online</span>
+              <span><i class="status-dot offline"></i><b id="offlineTowerCount">1</b> Offline</span>
+            </div>
+            <div class="progress-track" aria-hidden="true"><span id="towerOnlineProgress"></span></div>
+            <small id="towerOnlinePercent">87.5% network availability</small>
+          </article>
+
+          <article class="metric-card metric-inclination">
+            <div class="metric-header">
+              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-chart"></use></svg></span>
+              <span class="metric-trend neutral">Overall</span>
+            </div>
+            <p>Average inclination</p>
+            <strong class="metric-value"><span id="averageInclination">0.64</span>°</strong>
+            <svg class="metric-sparkline" viewBox="0 0 240 54" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#2478f3" stop-opacity=".25"></stop>
+                  <stop offset="1" stop-color="#2478f3" stop-opacity="0"></stop>
+                </linearGradient>
+              </defs>
+              <path class="spark-area" d="M0 39 12 27 24 32 36 19 48 36 60 30 72 33 84 21 96 26 108 16 120 28 132 23 144 31 156 18 168 25 180 12 192 29 204 22 216 34 228 17 240 20V54H0Z"></path>
+              <path class="spark-line" d="M0 39 12 27 24 32 36 19 48 36 60 30 72 33 84 21 96 26 108 16 120 28 132 23 144 31 156 18 168 25 180 12 192 29 204 22 216 34 228 17 240 20"></path>
+            </svg>
+            <div class="metric-footer"><span>Maximum <b id="maximumInclination">1.24°</b></span><span>Minimum <b id="minimumInclination">0.24°</b></span></div>
+          </article>
+
+          <article class="metric-card metric-sensors">
+            <div class="metric-header">
+              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-signal"></use></svg></span>
+              <span class="metric-trend positive">+4 today</span>
+            </div>
+            <p>Active sensors</p>
+            <strong class="metric-value" id="activeSensorCount">32</strong>
+            <div class="metric-breakdown">
+              <span><i class="status-dot normal"></i><b id="normalSensorCount">30</b> Normal</span>
+              <span><i class="status-dot warning"></i><b id="alertSensorCount">2</b> Attention</span>
+            </div>
+            <div class="progress-track sensor-progress" aria-hidden="true"><span id="sensorNormalProgress"></span></div>
+            <small id="sensorNormalPercent">93.8% reporting normally</small>
+          </article>
+
+          <article class="metric-card metric-health">
+            <div class="metric-header">
+              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-shield"></use></svg></span>
+              <span class="health-label">Good</span>
+            </div>
+            <p>System health</p>
+            <div class="health-gauge" role="img" aria-label="System health 94 percent">
+              <div class="gauge-arc" id="healthGauge"></div>
+              <strong><span id="systemHealthValue">94</span>%</strong>
+            </div>
+            <div class="health-message">
+              <svg aria-hidden="true"><use href="#icon-check"></use></svg>
+              <span id="healthMessage">Core services operational</span>
+            </div>
+          </article>
+        </section>
+
+        <section class="analytics-panel" id="analyticsPanel" aria-labelledby="analyticsTitle">
+          <div class="panel-toolbar">
+            <div class="view-tabs" role="tablist" aria-label="Analytics view">
+              <button id="trendTab" type="button" role="tab" aria-selected="true" aria-controls="chartSection" data-chart-mode="trend">Inclination trend</button>
+              <button id="distributionTab" type="button" role="tab" aria-selected="false" aria-controls="chartSection" data-chart-mode="distribution">Tilt distribution</button>
+            </div>
+            <div class="toolbar-filters">
+              <div class="range-filters" role="group" aria-label="Time range">
+                <button class="is-active" type="button" data-range="realtime">Real-time</button>
+                <button type="button" data-range="24h">24H</button>
+                <button type="button" data-range="7d">7D</button>
+                <button type="button" data-range="30d">30D</button>
+                <button type="button" data-range="custom">Custom</button>
+              </div>
+              <button class="date-range-button" id="dateRangeButton" type="button">
+                <svg aria-hidden="true"><use href="#icon-calendar"></use></svg>
+                <span id="dateRangeLabel">Live · Last 24 samples</span>
+              </button>
             </div>
           </div>
 
-          <div class="chart-wrap">
-            <canvas id="tiltChart" width="900" height="330"></canvas>
-          </div>
-        </article>
+          <div class="analytics-grid">
+            <div class="chart-section" id="chartSection" role="tabpanel" aria-labelledby="trendTab">
+              <div class="chart-heading">
+                <div>
+                  <p class="panel-kicker">Structural movement</p>
+                  <h2 id="analyticsTitle">Inclination trend</h2>
+                  <span id="chartDescription">Maximum tilt angle by tower</span>
+                </div>
+                <div class="chart-summary">
+                  <span>Alert threshold</span>
+                  <strong>1.00°</strong>
+                </div>
+              </div>
 
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <p class="panel-kicker">LIVE SENSOR</p>
-              <h2>Selected Station</h2>
+              <div class="chart-container">
+                <canvas
+                  id="inclinationChart"
+                  width="900"
+                  height="390"
+                  role="img"
+                  aria-label="Line chart showing tower inclination over time"
+                >
+                  Tower inclination trend chart.
+                </canvas>
+                <div class="chart-tooltip" id="chartTooltip" role="status" aria-live="polite"></div>
+              </div>
+              <div class="chart-legend" id="chartLegend" aria-label="Chart legend"></div>
             </div>
 
-            <select id="stationSelector"></select>
-          </div>
+            <div class="ranking-section">
+              <div class="ranking-heading">
+                <div>
+                  <p class="panel-kicker">Attention priority</p>
+                  <h2>Top towers by inclination</h2>
+                </div>
+                <span class="ranking-count" id="rankingCount">8 towers</span>
+              </div>
 
-          <div class="tilt-visual">
-            <div class="tilt-ring">
-              <div class="tilt-cross horizontal"></div>
-              <div class="tilt-cross vertical"></div>
-              <div class="tilt-dot" id="tiltDot"></div>
-            </div>
-          </div>
+              <div class="table-wrap">
+                <table>
+                  <caption class="sr-only">Towers ranked by maximum tilt angle</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Rank</th>
+                      <th scope="col">Tower</th>
+                      <th scope="col">Max tilt</th>
+                      <th scope="col">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="rankingBody"></tbody>
+                </table>
+              </div>
 
-          <div class="tilt-values">
-            <div>
-              <span>X-axis</span>
-              <strong><span id="tiltX">0.0</span>°</strong>
-            </div>
-            <div>
-              <span>Y-axis</span>
-              <strong><span id="tiltY">0.0</span>°</strong>
-            </div>
-            <div>
-              <span>Temperature</span>
-              <strong><span id="temperature">0</span>°C</strong>
-            </div>
-          </div>
-
-          <div class="station-meta">
-            <div>
-              <span>Station</span>
-              <strong id="stationName">--</strong>
-            </div>
-            <div>
-              <span>Location</span>
-              <strong id="stationLocation">--</strong>
-            </div>
-            <div>
-              <span>LoRa RSSI</span>
-              <strong><span id="stationRssi">--</span> dBm</strong>
-            </div>
-            <div>
-              <span>Battery</span>
-              <strong><span id="stationBattery">--</span>%</strong>
-            </div>
-          </div>
-        </article>
-      </div>
-
-      <div class="bottom-grid">
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <p class="panel-kicker">NODE OVERVIEW</p>
-              <h2>Station Health</h2>
-            </div>
-            <button id="refreshButton" type="button">Refresh data</button>
-          </div>
-
-          <div id="stationOverview" class="overview-grid"></div>
-        </article>
-
-        <article class="panel">
-          <div class="panel-heading">
-            <div>
-              <p class="panel-kicker">SYSTEM STATUS</p>
-              <h2>Current Condition</h2>
+              <div class="ranking-footer">
+                <span><i class="status-dot normal"></i><b id="normalTowerCount">5</b> Normal</span>
+                <span><i class="status-dot warning"></i><b id="warningTowerCount">2</b> Warning</span>
+                <span><i class="status-dot alert"></i><b id="criticalTowerCount">1</b> Alert</span>
+              </div>
             </div>
           </div>
 
-          <div class="condition-box" id="conditionBox">
-            <span class="condition-dot"></span>
-            <div>
-              <strong id="conditionTitle">System Normal</strong>
-              <p id="conditionText">
-                All monitored tilt angles are below the warning threshold.
-              </p>
-            </div>
-          </div>
+          <div class="panel-loading" aria-hidden="true"><span></span><p>Updating monitoring data…</p></div>
+        </section>
 
-          <div class="threshold-list">
-            <div><span>Normal</span><strong>&lt; 2.5°</strong></div>
-            <div><span>Warning</span><strong>2.5° – 4.9°</strong></div>
-            <div><span>Critical</span><strong>≥ 5.0°</strong></div>
+        <footer class="dashboard-footer">
+          <div class="update-status" aria-live="polite">
+            <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+            <span>Last updated <strong id="lastUpdated">just now</strong></span>
           </div>
-        </article>
-      </div>
-    </section>
-  </main>
+          <div class="footer-controls">
+            <span>All times are in UTC+7</span>
+            <label class="auto-refresh-control" for="autoRefreshToggle">
+              <input id="autoRefreshToggle" type="checkbox" checked />
+              <span class="switch" aria-hidden="true"></span>
+              Auto-refresh
+            </label>
+          </div>
+        </footer>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast" id="dashboardToast" role="status" aria-live="polite" aria-atomic="true">
+    <span class="toast-icon" aria-hidden="true"></span>
+    <span id="dashboardToastMessage"></span>
+  </div>
 
   <script src="./js/app.js"></script>
 </body>
