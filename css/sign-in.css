@@ -75,6 +75,7 @@ button {
   max-width: 610px;
   padding-left: clamp(0px, 3vw, 42px);
   filter: drop-shadow(0 12px 35px rgba(0, 0, 0, 0.3));
+  transform: translateY(-40px);
 }
 
 .system-status {
