@@ -75,7 +75,10 @@ button {
   max-width: 610px;
   padding-left: clamp(0px, 3vw, 42px);
   filter: drop-shadow(0 12px 35px rgba(0, 0, 0, 0.3));
-  transform: translateY(-40px);
+  /* Đưa toàn bộ khối bên trái đẩy lên sát đỉnh */
+  align-self: flex-start; 
+  /* Hoặc tự chỉnh khoảng cách tính từ đỉnh xuống */
+  margin-top: 10vh;
 }
 
 .system-status {
