@@ -137,9 +137,9 @@
 
       if (!window.TowerAuth.createSession(usernameInput.value)) {
         showAuthenticationError(
-          "A secure browser session could not be created. Enable session storage and try again."
+          "A secure browser session could not be created. Enable browser storage and try again."
         );
-        showToast("Browser session storage is unavailable.", "error");
+        showToast("Browser storage is unavailable.", "error");
         setLoading(false);
         return;
       }

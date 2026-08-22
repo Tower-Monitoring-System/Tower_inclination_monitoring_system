@@ -10,7 +10,7 @@
 
   function readSession() {
     try {
-      const value = window.sessionStorage.getItem(SESSION_KEY);
+      const value = window.localStorage.getItem(SESSION_KEY);
       return value ? JSON.parse(value) : null;
     } catch (error) {
       return null;
@@ -19,7 +19,7 @@
 
   function clearSession() {
     try {
-      window.sessionStorage.removeItem(SESSION_KEY);
+      window.localStorage.removeItem(SESSION_KEY);
     } catch (error) {
       // Storage can be unavailable in privacy-restricted browser contexts.
     }
@@ -56,7 +56,7 @@
     }
 
     try {
-      window.sessionStorage.setItem(
+      window.localStorage.setItem(
         SESSION_KEY,
         JSON.stringify({
           version: 1,
