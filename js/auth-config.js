@@ -4,5 +4,5 @@
  */
 window.TOWER_AUTH_CONFIG = Object.freeze({
   username: "Khoa DTVT",
-  password: "DTVT@MaiDinh"
+  password: "DTVT@maidinh"
 });
