@@ -72,7 +72,9 @@ button {
 }
 
 .system-overview {
-  max-width: 610px;
+  align-self: start;
+  max-width: 700px;
+  margin-top: clamp(44px, 8vh, 82px);
   padding-left: clamp(0px, 3vw, 42px);
   filter: drop-shadow(0 12px 35px rgba(0, 0, 0, 0.3));
 }
@@ -232,19 +234,40 @@ button {
   display: flex;
   align-items: center;
   height: 52px;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+  background-clip: padding-box;
+  isolation: isolate;
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+
+.input-shell::after {
+  position: absolute;
+  z-index: 5;
+  inset: -1px;
+  border: 1px solid transparent;
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .input-shell:focus-within {
   border-color: rgba(72, 216, 197, 0.68);
   background: rgba(255, 255, 255, 0.075);
-  box-shadow: 0 0 0 4px rgba(72, 216, 197, 0.09);
+  box-shadow: inset 0 0 0 1px rgba(72, 216, 197, 0.12);
+}
+
+.input-shell:focus-within::after {
+  border-color: rgba(72, 216, 197, 0.68);
+  box-shadow: inset 0 0 0 1px rgba(72, 216, 197, 0.1);
 }
 
 .input-shell > svg {
+  position: relative;
+  z-index: 2;
   flex: 0 0 auto;
   width: 19px;
   height: 19px;
@@ -262,11 +285,15 @@ button {
 }
 
 .input-shell input {
-  width: 100%;
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  width: auto;
   min-width: 0;
   height: 100%;
   padding: 0 15px 0 12px;
   border: 0;
+  border-radius: 0 11px 11px 0;
   outline: 0;
   color: var(--text);
   background: transparent;
@@ -285,6 +312,7 @@ button {
 .input-shell input:-webkit-autofill,
 .input-shell input:-webkit-autofill:hover,
 .input-shell input:-webkit-autofill:focus {
+  border-radius: 0 11px 11px 0;
   box-shadow: 0 0 0 1000px #102231 inset;
   -webkit-text-fill-color: var(--text);
   caret-color: var(--text);
@@ -292,11 +320,17 @@ button {
 
 .field-group.has-error .input-shell {
   border-color: rgba(255, 127, 139, 0.76);
-  box-shadow: 0 0 0 4px rgba(255, 127, 139, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(255, 127, 139, 0.09);
+}
+
+.field-group.has-error .input-shell::after {
+  border-color: rgba(255, 127, 139, 0.76);
+  box-shadow: inset 0 0 0 1px rgba(255, 127, 139, 0.08);
 }
 
 .password-toggle {
   position: absolute;
+  z-index: 6;
   right: 8px;
   min-width: 48px;
   padding: 8px 7px;
@@ -641,6 +675,10 @@ button {
   .sign-in-card {
     padding-top: 28px;
     padding-bottom: 28px;
+  }
+
+  .system-overview {
+    margin-top: 12px;
   }
 
   .welcome-copy {
