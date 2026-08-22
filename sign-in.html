@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en" class="auth-pending">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta
+    name="description"
+    content="Sign in to the Tower Inclination Monitoring System"
+  />
+  <meta name="theme-color" content="#071421" />
+  <title>Sign In | Tower Inclination Monitoring System</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./css/sign-in.css" />
+  <script src="./js/auth-config.js"></script>
+  <script src="./js/auth.js"></script>
+  <script src="./js/sign-in.js" defer></script>
+</head>
+<body data-page="sign-in">
+  <main class="sign-in-page">
+    <section class="system-overview" aria-labelledby="overviewTitle">
+      <div class="system-status">
+        <span class="system-status-dot" aria-hidden="true"></span>
+        Monitoring network ready
+      </div>
+
+      <h1 id="overviewTitle">
+        Structural insight.<br />
+        <span>Always in view.</span>
+      </h1>
+      <p>
+        Secure access to live tower inclination data, connected station health,
+        and early-warning conditions.
+      </p>
+
+      <ul class="capability-list" aria-label="System capabilities">
+        <li>
+          <strong>Real-time sensing</strong>
+          <span>Continuous X/Y-axis tilt monitoring</span>
+        </li>
+        <li>
+          <strong>LoRa-connected nodes</strong>
+          <span>Remote station status at a glance</span>
+        </li>
+        <li>
+          <strong>Threshold awareness</strong>
+          <span>Clear warning and critical conditions</span>
+        </li>
+      </ul>
+    </section>
+
+    <section class="sign-in-card" aria-labelledby="signInTitle">
+      <header class="brand-lockup">
+        <img src="./assets/logo.svg" alt="" width="52" height="52" />
+        <div>
+          <span>Tower Inclination</span>
+          <strong>Monitoring System</strong>
+        </div>
+      </header>
+
+      <div class="welcome-copy">
+        <p class="eyebrow">Secure operator access</p>
+        <h2 id="signInTitle">Welcome back</h2>
+        <p>Enter your credentials to open the monitoring dashboard.</p>
+      </div>
+
+      <form id="signInForm" novalidate>
+        <div class="field-group">
+          <label for="username">Username or email</label>
+          <div class="input-shell">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" />
+            </svg>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              autocomplete="username"
+              placeholder="Enter your username"
+              aria-describedby="usernameError"
+              required
+            />
+          </div>
+          <p class="field-error" id="usernameError" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label for="password">Password</label>
+          <div class="input-shell has-action">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 10V8a5 5 0 0 1 10 0v2m-9 0h8a2 2 0 0 1 2 2v7H6v-7a2 2 0 0 1 2-2Z" />
+            </svg>
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              placeholder="Enter your password"
+              aria-describedby="passwordError"
+              required
+            />
+            <button
+              class="password-toggle"
+              id="passwordToggle"
+              type="button"
+              aria-label="Show password"
+              aria-pressed="false"
+            >
+              Show
+            </button>
+          </div>
+          <p class="field-error" id="passwordError" aria-live="polite"></p>
+        </div>
+
+        <div class="form-options">
+          <label class="remember-option" for="rememberUsername">
+            <input id="rememberUsername" name="rememberUsername" type="checkbox" />
+            <span aria-hidden="true"></span>
+            Remember me
+          </label>
+          <button class="forgot-password" id="forgotPassword" type="button">
+            Forgot password?
+          </button>
+        </div>
+
+        <div
+          class="authentication-error"
+          id="authenticationError"
+          role="alert"
+          aria-live="assertive"
+          hidden
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 8v5m0 3.5v.01M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z" />
+          </svg>
+          <span></span>
+        </div>
+
+        <button class="submit-button" id="submitButton" type="submit">
+          <span class="button-label">Sign in</span>
+          <span class="button-spinner" aria-hidden="true"></span>
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+        </button>
+      </form>
+
+      <footer class="security-note">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Zm-3 9 2 2 4-4" />
+        </svg>
+        <span>Development access · Credentials are validated locally</span>
+      </footer>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true">
+    <span class="toast-icon" aria-hidden="true"></span>
+    <span class="toast-message"></span>
+  </div>
+</body>
+</html>

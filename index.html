@@ -1,17 +1,26 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="auth-pending">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="Tower Tilt Monitoring System Dashboard" />
-  <title>Tower Tilt Monitoring System</title>
-  <link rel="stylesheet" href="css/style.css" />
+  <meta name="description" content="Tower Inclination Monitoring System Dashboard" />
+  <meta name="theme-color" content="#08111f" />
+  <title>Dashboard | Tower Inclination Monitoring System</title>
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./css/style.css" />
+  <script src="./js/auth-config.js"></script>
+  <script src="./js/auth.js"></script>
 </head>
-<body>
+<body data-page="dashboard">
   <main class="main">
     <header class="topbar">
-      <div>
-        <h1>Tower Tilt Monitoring System</h1>
+      <div class="dashboard-brand">
+        <img src="./assets/logo.svg" alt="" width="48" height="48" />
+        <div>
+          <p class="eyebrow">Engineering monitoring platform</p>
+          <h1>Tower Inclination Monitoring System</h1>
+          <p class="subtitle">Live structural condition and station telemetry</p>
+        </div>
       </div>
 
       <div class="topbar-actions">
@@ -24,6 +33,24 @@
           <span id="currentDate">--</span>
           <strong id="currentTime">--:--:--</strong>
         </div>
+
+        <div class="operator-card">
+          <span class="operator-avatar" aria-hidden="true">A</span>
+          <div>
+            <span>Signed in as</span>
+            <strong data-auth-username>Operator</strong>
+          </div>
+        </div>
+
+        <button
+          class="sign-out-button"
+          type="button"
+          data-action="sign-out"
+          aria-label="Sign out of the monitoring system"
+        >
+          <img src="./assets/icon/icon_logout.png" alt="" width="17" height="17" />
+          <span>Sign out</span>
+        </button>
       </div>
     </header>
 
@@ -168,6 +195,6 @@
     </section>
   </main>
 
-  <script src="js/app.js"></script>
+  <script src="./js/app.js"></script>
 </body>
 </html>
