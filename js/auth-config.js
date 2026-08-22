@@ -3,6 +3,6 @@
  * Never place a real account or secret in this public file.
  */
 window.TOWER_AUTH_CONFIG = Object.freeze({
-  username: "Khoa DTVT",
+  username: "DTVT",
   password: "DTVT@maidinh"
 });
