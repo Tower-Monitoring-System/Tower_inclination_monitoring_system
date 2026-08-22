@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Power Station Tilt Monitoring System - Demo Dashboard" />
+  <title>Power Station Tilt Monitoring System</title>
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="assets/logo.svg" alt="TiltGuard logo" class="brand-logo" />
+        <div>
+          <h1>TiltGuard</h1>
+          <p>Power Station Monitor</p>
+        </div>
+      </div>
+
+      <nav class="nav">
+        <a class="nav-item active" href="#dashboard">Dashboard</a>
+        <a class="nav-item" href="#stations">Stations</a>
+        <a class="nav-item" href="#alerts">Alerts</a>
+        <a class="nav-item" href="#about">System Info</a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="status-dot online"></span>
+        <span>Monitoring active</span>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">SMART GRID / STRUCTURAL MONITORING</p>
+          <h2>Power Station Tilt Monitoring System</h2>
+          <p class="subtitle">Real-time monitoring of equipment tilt, vibration and communication status.</p>
+        </div>
+
+        <div class="topbar-actions">
+          <div class="live-pill">
+            <span class="pulse"></span>
+            LIVE
+          </div>
+          <div class="clock-card">
+            <span id="currentDate">--</span>
+            <strong id="currentTime">--:--:--</strong>
+          </div>
+        </div>
+      </header>
+
+      <section id="dashboard" class="section">
+        <div class="summary-grid">
+          <article class="metric-card">
+            <span class="metric-label">Monitored Stations</span>
+            <strong class="metric-value" id="stationCount">4</strong>
+            <span class="metric-note positive">All devices reporting</span>
+          </article>
+
+          <article class="metric-card">
+            <span class="metric-label">Max. Tilt Angle</span>
+            <strong class="metric-value"><span id="maxTilt">2.8</span>°</strong>
+            <span class="metric-note">Warning threshold: 5.0°</span>
+          </article>
+
+          <article class="metric-card">
+            <span class="metric-label">Active Alerts</span>
+            <strong class="metric-value" id="activeAlertCount">1</strong>
+            <span class="metric-note warning">Requires attention</span>
+          </article>
+
+          <article class="metric-card">
+            <span class="metric-label">LoRa Link Quality</span>
+            <strong class="metric-value"><span id="avgRssi">-71</span> dBm</strong>
+            <span class="metric-note positive">Stable connection</span>
+          </article>
+        </div>
+
+        <div class="dashboard-grid">
+          <article class="panel panel-large">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">TREND</p>
+                <h3>Tilt Angle History</h3>
+              </div>
+              <div class="legend">
+                <span><i class="legend-dot x"></i>X-axis</span>
+                <span><i class="legend-dot y"></i>Y-axis</span>
+              </div>
+            </div>
+
+            <div class="chart-wrap">
+              <canvas id="tiltChart" width="900" height="330" aria-label="Tilt history chart"></canvas>
+            </div>
+          </article>
+
+          <article class="panel tilt-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="panel-kicker">LIVE SENSOR</p>
+                <h3>Selected Station</h3>
+              </div>
+              <select id="stationSelector" aria-label="Select station"></select>
+            </div>
+
+            <div class="tilt-visual">
+              <div class="tilt-ring">
+                <div class="tilt-cross horizontal"></div>
+                <div class="tilt-cross vertical"></div>
+                <div class="tilt-dot" id="tiltDot"></div>
+              </div>
+            </div>
+
+            <div class="tilt-values">
+              <div>
+                <span>X-axis</span>
+                <strong><span id="tiltX">0.0</span>°</strong>
+              </div>
+              <div>
+                <span>Y-axis</span>
+                <strong><span id="tiltY">0.0</span>°</strong>
+              </div>
+              <div>
+                <span>Temperature</span>
+                <strong><span id="temperature">0</span>°C</strong>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section id="stations" class="section">
+        <div class="section-heading">
+          <div>
+            <p class="panel-kicker">FIELD NODES</p>
+            <h3>Station Status</h3>
+          </div>
+          <button id="refreshButton" class="secondary-button">Refresh data</button>
+        </div>
+
+        <div id="stationCards" class="station-grid"></div>
+      </section>
+
+      <section id="alerts" class="section">
+        <div class="section-heading">
+          <div>
+            <p class="panel-kicker">EVENT LOG</p>
+            <h3>Alerts & Notifications</h3>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div id="alertList" class="alert-list"></div>
+        </div>
+      </section>
+
+      <section id="about" class="section about-grid">
+        <article class="panel">
+          <p class="panel-kicker">SYSTEM ARCHITECTURE</p>
+          <h3>Demo Concept</h3>
+          <p class="body-copy">
+            Each monitoring node can use an ESP32, MPU6050 tilt sensor and LoRa 433 MHz module.
+            Sensor data is transmitted to a master station and displayed on this web dashboard.
+          </p>
+
+          <div class="architecture">
+            <span>MPU6050</span>
+            <b>→</b>
+            <span>ESP32 Node</span>
+            <b>→</b>
+            <span>LoRa 433 MHz</span>
+            <b>→</b>
+            <span>Gateway</span>
+            <b>→</b>
+            <span>Web Dashboard</span>
+          </div>
+        </article>
+
+        <article class="panel">
+          <p class="panel-kicker">DEMO NOTES</p>
+          <h3>How this sample works</h3>
+          <ul class="feature-list">
+            <li>No backend is required.</li>
+            <li>Sensor values are simulated in JavaScript.</li>
+            <li>The chart is drawn using HTML Canvas.</li>
+            <li>It can be deployed directly on GitHub Pages.</li>
+            <li>Later, you can replace mock data with MQTT/API data.</li>
+          </ul>
+        </article>
+      </section>
+
+      <footer class="footer">
+        <span>Power Station Tilt Monitoring System — Demo Website</span>
+        <span>Frontend: HTML + CSS + JavaScript</span>
+      </footer>
+    </main>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
