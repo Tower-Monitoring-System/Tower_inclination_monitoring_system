@@ -72,9 +72,9 @@ button {
 }
 
 .system-overview {
-  align-self: start;
+  align-self: center;
   max-width: 700px;
-  margin-top: clamp(44px, 8vh, 82px);
+  margin-top: 0;
   padding-left: clamp(0px, 3vw, 42px);
   filter: drop-shadow(0 12px 35px rgba(0, 0, 0, 0.3));
 }
