@@ -39,16 +39,8 @@
     <symbol id="icon-menu" viewBox="0 0 24 24">
       <path d="M4 7h16M4 12h16M4 17h16"></path>
     </symbol>
-    <symbol id="icon-search" viewBox="0 0 24 24">
-      <circle cx="11" cy="11" r="7"></circle>
-      <path d="m20 20-4-4"></path>
-    </symbol>
     <symbol id="icon-bell" viewBox="0 0 24 24">
       <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"></path>
-    </symbol>
-    <symbol id="icon-help" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9"></circle>
-      <path d="M9.7 9a2.5 2.5 0 1 1 3.1 2.4c-.8.3-.8.9-.8 1.6m0 3.5v.01"></path>
     </symbol>
     <symbol id="icon-chevron" viewBox="0 0 24 24">
       <path d="m9 18 6-6-6-6"></path>
@@ -113,11 +105,6 @@
           <span>Analytics</span>
         </button>
 
-        <p class="nav-section-label nav-section-secondary">Management</p>
-        <button class="nav-item" type="button" data-nav-target="System settings">
-          <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
-          <span>System settings</span>
-        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -165,18 +152,6 @@
         </div>
 
         <div class="topbar-actions">
-          <div class="header-search" id="headerSearch">
-            <svg aria-hidden="true"><use href="#icon-search"></use></svg>
-            <label class="sr-only" for="globalSearch">Search towers</label>
-            <input id="globalSearch" type="search" placeholder="Search tower or location" autocomplete="off" />
-            <button class="search-close" id="searchClose" type="button" aria-label="Close search">×</button>
-          </div>
-          <button class="icon-button" id="searchButton" type="button" aria-label="Search towers">
-            <svg aria-hidden="true"><use href="#icon-search"></use></svg>
-          </button>
-          <button class="icon-button" id="helpButton" type="button" aria-label="Open help">
-            <svg aria-hidden="true"><use href="#icon-help"></use></svg>
-          </button>
           <button class="icon-button notification-button" id="notificationButton" type="button" aria-label="View 2 active notifications">
             <svg aria-hidden="true"><use href="#icon-bell"></use></svg>
             <span id="notificationCount">2</span>
@@ -195,6 +170,10 @@
                 <span class="user-avatar" data-user-initial aria-hidden="true">O</span>
                 <p><strong data-auth-username>Operator</strong><span>Authenticated session</span></p>
               </div>
+              <button type="button" role="menuitem" data-nav-target="System settings">
+                <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
+                System settings
+              </button>
               <button type="button" role="menuitem" data-action="sign-out">
                 <svg aria-hidden="true"><use href="#icon-logout"></use></svg>
                 Sign out

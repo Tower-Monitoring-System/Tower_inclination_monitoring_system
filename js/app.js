@@ -110,7 +110,6 @@
   const state = {
     range: "realtime",
     chartMode: "trend",
-    searchQuery: "",
     autoRefresh: true,
     lastUpdatedAt: new Date(),
     hoverIndex: null,
@@ -124,11 +123,6 @@
     appShell: document.getElementById("appShell"),
     sidebarBackdrop: document.getElementById("sidebarBackdrop"),
     menuButton: document.getElementById("menuButton"),
-    headerSearch: document.getElementById("headerSearch"),
-    globalSearch: document.getElementById("globalSearch"),
-    searchButton: document.getElementById("searchButton"),
-    searchClose: document.getElementById("searchClose"),
-    helpButton: document.getElementById("helpButton"),
     notificationButton: document.getElementById("notificationButton"),
     notificationCount: document.getElementById("notificationCount"),
     accountButton: document.getElementById("accountButton"),
@@ -193,27 +187,12 @@
       item.addEventListener("click", function handleNavigationSelection() {
         const target = item.dataset.navTarget;
         closeMobileNavigation();
+        closeAccountMenu();
 
         if (target !== "Overview") {
           showToast(`${target} is prepared for the next integration phase.`, "info");
         }
       });
-    });
-
-    elements.searchButton.addEventListener("click", openSearch);
-    elements.searchClose.addEventListener("click", closeSearch);
-    elements.globalSearch.addEventListener("input", function filterTowers(event) {
-      state.searchQuery = event.target.value.trim().toLowerCase();
-      renderRanking();
-    });
-    elements.globalSearch.addEventListener("keydown", function handleSearchKeyboard(event) {
-      if (event.key === "Escape") {
-        closeSearch();
-      }
-    });
-
-    elements.helpButton.addEventListener("click", function showHelp() {
-      showToast("Use the range controls to inspect historical inclination data. Hover the chart for exact readings.", "info");
     });
 
     elements.notificationButton.addEventListener("click", function showNotifications() {
@@ -236,7 +215,6 @@
       if (event.key === "Escape") {
         closeAccountMenu();
         closeMobileNavigation();
-        closeSearch();
       }
     });
 
@@ -301,19 +279,6 @@
     elements.appShell.classList.remove("sidebar-open");
     elements.menuButton.setAttribute("aria-expanded", "false");
     document.body.classList.remove("sidebar-lock");
-  }
-
-  function openSearch() {
-    elements.headerSearch.classList.add("is-open");
-    elements.globalSearch.focus();
-  }
-
-  function closeSearch() {
-    elements.headerSearch.classList.remove("is-open");
-    elements.globalSearch.value = "";
-    state.searchQuery = "";
-    renderRanking();
-    elements.searchButton.focus({ preventScroll: true });
   }
 
   function toggleAccountMenu() {
@@ -413,27 +378,9 @@
       .slice()
       .sort(function sortByTilt(a, b) {
         return b.maxTilt - a.maxTilt;
-      })
-      .filter(function filterTower(tower) {
-        if (!state.searchQuery) {
-          return true;
-        }
-
-        return `${tower.id} ${tower.name} ${tower.location}`
-          .toLowerCase()
-          .includes(state.searchQuery);
       });
 
     elements.rankingCount.textContent = `${sortedTowers.length} ${sortedTowers.length === 1 ? "tower" : "towers"}`;
-
-    if (!sortedTowers.length) {
-      elements.rankingBody.innerHTML = `
-        <tr class="empty-row">
-          <td colspan="4">No towers match your search.</td>
-        </tr>
-      `;
-      return;
-    }
 
     elements.rankingBody.innerHTML = sortedTowers
       .map(function renderTowerRow(tower, index) {

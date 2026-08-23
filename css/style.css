@@ -224,10 +224,6 @@ svg {
   white-space: nowrap;
 }
 
-.nav-section-secondary {
-  margin-top: 30px;
-}
-
 .nav-item {
   position: relative;
   display: grid;
@@ -668,7 +664,7 @@ svg {
   padding: 10px;
   border: 0;
   border-radius: 9px;
-  color: var(--danger);
+  color: var(--text);
   background: transparent;
   font-size: 0.74rem;
   font-weight: 700;
@@ -676,6 +672,14 @@ svg {
 }
 
 .account-dropdown > button:hover {
+  background: var(--surface-soft);
+}
+
+.account-dropdown > button[data-action="sign-out"] {
+  color: var(--danger);
+}
+
+.account-dropdown > button[data-action="sign-out"]:hover {
   background: var(--danger-soft);
 }
 
@@ -687,78 +691,6 @@ svg {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.8;
-}
-
-.header-search {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  right: 218px;
-  display: flex;
-  align-items: center;
-  width: 0;
-  height: 42px;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 11px;
-  background: #fff;
-  opacity: 0;
-  visibility: hidden;
-  transition: width 210ms ease, opacity 160ms ease, visibility 160ms ease, border-color 160ms ease;
-}
-
-.header-search.is-open {
-  width: min(330px, 35vw);
-  border-color: var(--border-strong);
-  box-shadow: 0 8px 24px rgba(22, 47, 76, 0.1);
-  opacity: 1;
-  visibility: visible;
-}
-
-.header-search > svg {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  margin-left: 12px;
-  fill: none;
-  stroke: var(--muted);
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.header-search input {
-  min-width: 0;
-  width: 100%;
-  height: 100%;
-  padding: 0 7px 0 9px;
-  border: 0;
-  outline: 0;
-  color: var(--text);
-  background: transparent;
-  font-size: 0.76rem;
-}
-
-.header-search input::placeholder {
-  color: var(--muted-light);
-}
-
-.search-close {
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  border: 0;
-  border-radius: 8px;
-  color: var(--muted);
-  background: transparent;
-  font-size: 1.25rem;
-  cursor: pointer;
-}
-
-.search-close:hover {
-  color: var(--text);
-  background: var(--surface-soft);
 }
 
 .dashboard-content {
@@ -1985,7 +1917,6 @@ tbody tr:hover {
   }
 
   .topbar-heading span,
-  #helpButton,
   .account-copy,
   .account-chevron {
     display: none;
@@ -2005,18 +1936,6 @@ tbody tr:hover {
   .account-button .user-avatar {
     width: 34px;
     height: 34px;
-  }
-
-  .header-search {
-    position: fixed;
-    top: 11px;
-    right: 14px;
-    left: 14px;
-    width: auto;
-  }
-
-  .header-search.is-open {
-    width: auto;
   }
 
   .dashboard-content {
