@@ -76,7 +76,7 @@ button {
   max-width: 700px;
   margin-top: 0;
   padding-left: clamp(0px, 3vw, 42px);
-  transform: translateY(-100px);
+  transform: translateY(-200px);
   filter: drop-shadow(0 12px 35px rgba(0, 0, 0, 0.3));
 }
 
