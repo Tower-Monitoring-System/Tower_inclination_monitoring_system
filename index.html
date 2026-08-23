@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./css/components.css?v=20260823.13" />
   <link rel="stylesheet" href="./css/dashboard.css?v=20260823.13" />
   <link rel="stylesheet" href="./css/list.css?v=20260823.2" />
+  <link rel="stylesheet" href="./css/alerts.css?v=20260824.1" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -28,6 +29,10 @@
     <symbol id="icon-alert" viewBox="0 0 24 24">
       <path d="M10.3 3.8 2.6 17.1A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.9L13.7 3.8a2 2 0 0 0-3.4 0Z"></path>
       <path d="M12 8v5m0 3.5v.01"></path>
+    </symbol>
+    <symbol id="icon-battery" viewBox="0 0 24 24">
+      <rect x="3" y="7" width="17" height="10" rx="2"></rect>
+      <path d="M20 10h1.5v4H20M7 10v4m4-4v4"></path>
     </symbol>
     <symbol id="icon-chart" viewBox="0 0 24 24">
       <path d="M4 19V5m0 14h16"></path>
@@ -104,7 +109,7 @@
           <svg aria-hidden="true"><use href="#icon-table"></use></svg>
           <span>List</span>
         </button>
-        <button class="nav-item" type="button" data-nav-target="Alerts center">
+        <button class="nav-item" type="button" data-nav-target="Alerts">
           <svg aria-hidden="true"><use href="#icon-alert"></use></svg>
           <span>Alerts</span>
           <small class="nav-alert-count" id="sidebarAlertCount">2</small>
@@ -469,6 +474,123 @@
 
           <p class="sr-only" id="listLiveStatus" role="status" aria-live="polite"></p>
         </section>
+
+        <section
+          class="page-view alerts-page"
+          id="alertsPage"
+          data-page-view="Alerts"
+          aria-labelledby="alertsPageTitle"
+          hidden
+        >
+          <header class="alerts-page-heading">
+            <div>
+              <p class="eyebrow"><span aria-hidden="true"></span>Automated sensor detection</p>
+              <h1 id="alertsPageTitle">Alerts Center</h1>
+              <p>Review battery and inclination events detected from validated sensor readings.</p>
+            </div>
+            <div class="alerts-sync-summary" id="alertsSyncSummary" aria-live="polite">
+              <span aria-hidden="true"></span>
+              <p><small>Last synchronized</small><strong id="alertsLastUpdated">Not yet</strong></p>
+            </div>
+          </header>
+
+          <section class="alerts-summary-grid" aria-label="Alert summary">
+            <article class="alert-metric total">
+              <span class="alert-metric-icon"><svg aria-hidden="true"><use href="#icon-alert"></use></svg></span>
+              <div><p>Total alerts</p><strong id="alertsTotalCount">0</strong><small>Detected events</small></div>
+            </article>
+            <article class="alert-metric critical">
+              <span class="alert-metric-icon"><svg aria-hidden="true"><use href="#icon-alert"></use></svg></span>
+              <div><p>Critical alerts</p><strong id="alertsCriticalCount">0</strong><small>Need immediate review</small></div>
+            </article>
+            <article class="alert-metric battery">
+              <span class="alert-metric-icon"><svg aria-hidden="true"><use href="#icon-battery"></use></svg></span>
+              <div><p>Battery alerts</p><strong id="alertsBatteryCount">0</strong><small>Currently active</small></div>
+            </article>
+            <article class="alert-metric inclination">
+              <span class="alert-metric-icon"><svg aria-hidden="true"><use href="#icon-chart"></use></svg></span>
+              <div><p>Inclination alerts</p><strong id="alertsInclinationCount">0</strong><small>Currently active</small></div>
+            </article>
+          </section>
+
+          <section class="alerts-panel" aria-labelledby="alertsTableTitle">
+            <div class="alerts-toolbar">
+              <div class="alerts-toolbar-title">
+                <h2 id="alertsTableTitle">Alert history</h2>
+                <p>Events are grouped to prevent duplicate alerts from consecutive readings.</p>
+              </div>
+
+              <label class="alerts-select-control" for="alertTypeFilter">
+                <span>Alert type</span>
+                <select id="alertTypeFilter">
+                  <option value="all">All types</option>
+                  <option value="battery">Battery</option>
+                  <option value="inclination">Inclination</option>
+                </select>
+              </label>
+
+              <div class="alerts-severity-filter" role="group" aria-label="Alert severity">
+                <button class="is-active" type="button" data-alert-severity="all" aria-pressed="true">All</button>
+                <button type="button" data-alert-severity="critical" aria-pressed="false">Critical</button>
+                <button type="button" data-alert-severity="warning" aria-pressed="false">Warning</button>
+                <button type="button" data-alert-severity="resolved" aria-pressed="false">Resolved</button>
+              </div>
+
+              <label class="alerts-select-control alerts-sort-control" for="alertSortOrder">
+                <span>Sort by</span>
+                <select id="alertSortOrder">
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                </select>
+              </label>
+
+              <button class="secondary-button alerts-refresh-button" id="alertsRefreshButton" type="button">
+                <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+                <span>Refresh</span>
+              </button>
+            </div>
+
+            <div class="alerts-error-banner" id="alertsErrorBanner" role="alert" hidden>
+              <span aria-hidden="true">!</span>
+              <p><strong>Alerts could not be updated</strong><small id="alertsErrorMessage">Please try again.</small></p>
+              <button type="button" id="alertsErrorRetry">Try again</button>
+            </div>
+
+            <div class="alerts-table-wrap">
+              <table class="alerts-table">
+                <caption class="sr-only">Detected battery and inclination alerts</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Alert ID</th>
+                    <th scope="col">Tower</th>
+                    <th scope="col">Type</th>
+                    <th scope="col">Message</th>
+                    <th scope="col">Time</th>
+                    <th scope="col">Severity</th>
+                    <th scope="col">Status</th>
+                    <th scope="col">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="alertsTableBody">
+                  <tr class="alerts-state-row">
+                    <td colspan="8"><span class="alerts-state-spinner" aria-hidden="true"></span><strong>Loading alerts…</strong></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="alerts-pagination-bar">
+              <p id="alertsRecordSummary">Showing 0 alerts</p>
+              <nav class="alerts-pagination" id="alertsPagination" aria-label="Alert pages"></nav>
+            </div>
+          </section>
+
+          <footer class="alerts-page-footer">
+            <p><span class="status-dot normal" aria-hidden="true"></span><span id="alertsPollingStatus">Updates while this page is open</span></p>
+            <span>Thresholds are managed in system constants · Event times match the sensor source</span>
+          </footer>
+          <p class="sr-only" id="alertsLiveStatus" role="status" aria-live="polite"></p>
+        </section>
       </main>
     </div>
   </div>
@@ -478,6 +600,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.1"></script>
+  <script type="module" src="./js/app.js?v=20260824.3"></script>
 </body>
 </html>

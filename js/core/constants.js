@@ -4,6 +4,30 @@ export const WARNING_THRESHOLDS = Object.freeze({
   alert: 1.0
 });
 
+export const ALERT_THRESHOLDS = Object.freeze({
+  battery: Object.freeze({ warning: 3.7, critical: 3.3 }),
+  inclination: Object.freeze({
+    warning: WARNING_THRESHOLDS.warning,
+    critical: WARNING_THRESHOLDS.alert
+  })
+});
+
+export const ALERT_TYPE = Object.freeze({
+  BATTERY: "battery",
+  INCLINATION: "inclination"
+});
+
+export const ALERT_SEVERITY = Object.freeze({
+  CRITICAL: "critical",
+  WARNING: "warning",
+  RESOLVED: "resolved"
+});
+
+export const ALERT_STATUS = Object.freeze({
+  ACTIVE: "active",
+  RESOLVED: "resolved"
+});
+
 export const STATION_STATUS = Object.freeze({
   NORMAL: "normal",
   WARNING: "warning",

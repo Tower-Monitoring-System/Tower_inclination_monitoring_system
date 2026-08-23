@@ -34,6 +34,7 @@ export class Dashboard extends EventTarget {
       appShell: byId("appShell"),
       overviewPage: byId("overviewPage"),
       listPage: byId("listPage"),
+      alertsPage: byId("alertsPage"),
       topbarTitle: byId("topbarTitle"),
       sidebarBackdrop: byId("sidebarBackdrop"),
       menuButton: byId("menuButton"),
@@ -73,7 +74,7 @@ export class Dashboard extends EventTarget {
         const target = item.dataset.navTarget;
         this.closeMobileNavigation();
         this.closeAccountMenu();
-        if (target === "Overview" || target === "List") {
+        if (target === "Overview" || target === "List" || target === "Alerts") {
           this.emitAction(DASHBOARD_ACTION.NAVIGATE, { target });
         } else {
           this.showToast(`${target} is prepared for the next integration phase.`, "info");
@@ -324,7 +325,7 @@ export class Dashboard extends EventTarget {
   }
 
   setActiveView(view) {
-    if (view !== "Overview" && view !== "List") {
+    if (view !== "Overview" && view !== "List" && view !== "Alerts") {
       return false;
     }
 
@@ -334,6 +335,9 @@ export class Dashboard extends EventTarget {
     }
     if (this.elements.listPage) {
       this.elements.listPage.hidden = view !== "List";
+    }
+    if (this.elements.alertsPage) {
+      this.elements.alertsPage.hidden = view !== "Alerts";
     }
     this.document.querySelectorAll(".sidebar-nav [data-nav-target]").forEach((item) => {
       const active = item.dataset.navTarget === view;
@@ -347,11 +351,14 @@ export class Dashboard extends EventTarget {
 
     const pageTitle = view === "List"
       ? "Sensor Data List"
-      : "Tower Inclination Monitoring System";
+      : view === "Alerts"
+        ? "Alerts Center"
+        : "Tower Inclination Monitoring System";
     if (this.elements.topbarTitle) {
       this.elements.topbarTitle.textContent = pageTitle;
     }
-    this.document.title = `${view === "List" ? "Sensor Data List" : "Overview"} | Tower Inclination Monitoring System`;
+    const documentTitle = view === "List" ? "Sensor Data List" : view === "Alerts" ? "Alerts Center" : "Overview";
+    this.document.title = `${documentTitle} | Tower Inclination Monitoring System`;
     this.document.body?.setAttribute("data-active-view", view.toLowerCase());
 
     if (view === "Overview") {

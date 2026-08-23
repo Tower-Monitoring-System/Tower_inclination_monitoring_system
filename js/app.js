@@ -1,4 +1,4 @@
-import { Dashboard } from "./components/Dashboard.js?v=20260823.9";
+import { Dashboard } from "./components/Dashboard.js?v=20260824.1";
 import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js";
 import {
   CHART_MODE,
@@ -9,7 +9,9 @@ import {
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
+import { AlertsPage } from "./pages/alertsPage.js?v=20260824.1";
 import { ListPage } from "./pages/listPage.js?v=20260824.1";
+import { AlertService } from "./services/alertService.js?v=20260824.1";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
@@ -42,6 +44,7 @@ let mqttService;
 let authService;
 let listPage;
 let sensorDataService;
+let alertsPage;
 let refreshPromise = null;
 let autoRefreshTimer = null;
 let analyticsTimer = null;
@@ -174,6 +177,11 @@ function handleDashboardAction(event) {
         } else {
           listPage.close();
         }
+        if (currentView === "Alerts") {
+          alertsPage.open();
+        } else {
+          alertsPage.close();
+        }
       }
       break;
     case DASHBOARD_ACTION.RANGE_CHANGE:
@@ -192,6 +200,7 @@ function handleDashboardAction(event) {
       break;
     case DASHBOARD_ACTION.SIGN_OUT:
       listPage?.close();
+      alertsPage?.close();
       void authService.signOut();
       break;
     default:
@@ -262,6 +271,7 @@ function destroyApplication() {
   window.clearTimeout(analyticsTimer);
   dashboard?.destroy();
   listPage?.destroy();
+  alertsPage?.destroy();
   mqttService?.destroy();
   apiService?.destroy();
 }
@@ -289,6 +299,11 @@ async function bootstrap() {
     listPage = new ListPage(sensorDataService, {
       onToast: (message, type) => dashboard.showToast(message, type)
     });
+    const alertsSensorDataService = new SensorDataService();
+    const alertService = new AlertService(alertsSensorDataService);
+    alertsPage = new AlertsPage(alertService, {
+      onToast: (message, type) => dashboard.showToast(message, type)
+    });
     dashboard.setIdentity(identity.displayName || identity.username);
     dashboard.setActiveView(currentView);
     dashboard.addEventListener("action", handleDashboardAction);
@@ -297,6 +312,7 @@ async function bootstrap() {
       authService.onAuthStateChange((event) => {
         if (event === "SIGNED_OUT") {
           listPage?.close();
+          alertsPage?.close();
           authService.redirect("sign-in.html");
         }
       })
