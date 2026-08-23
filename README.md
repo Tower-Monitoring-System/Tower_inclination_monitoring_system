@@ -23,10 +23,12 @@ Tower_inclination_monitoring_system/
 │
 ├── js/
 │   ├── app.js
+│   ├── sign-in.js
 │   │
 │   ├── core/
 │   │   ├── store.js
 │   │   ├── config.js
+│   │   ├── supabaseConfig.js
 │   │   └── constants.js
 │   │
 │   ├── models/
@@ -35,6 +37,7 @@ Tower_inclination_monitoring_system/
 │   │
 │   ├── services/
 │   │   ├── apiService.js
+│   │   ├── supabaseClient.js
 │   │   ├── mqttService.js
 │   │   └── authService.js
 │   │
@@ -49,5 +52,19 @@ Tower_inclination_monitoring_system/
 │       ├── StationCard.js
 │       └── AlertPanel.js
 │
+├── supabase/
+│   ├── config.toml
+│   ├── schema.sql
+│   │
+│   └── functions/
+│       └── username-login/
+│           └── index.ts
 └── assets/
 ```
+---
+
+## Authentication
+
+Authentication is handled by Supabase Auth and the `username-login` Edge Function. Passwords are not stored in the frontend source or in `public.profiles`.
+
+See `SUPABASE_SETUP.md` for setup and deployment instructions.

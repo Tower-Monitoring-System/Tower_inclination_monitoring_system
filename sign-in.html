@@ -12,7 +12,7 @@
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
   <link rel="stylesheet" href="./css/sign-in.css?v=20260823.2" />
-  <script type="module" src="./js/sign-in.js?v=20260823.19"></script>
+  <script type="module" src="./js/sign-in.js?v=20260823.20"></script>
 </head>
 <body data-page="sign-in">
   <main class="sign-in-page">
@@ -43,7 +43,7 @@
 
       <form id="signInForm" novalidate>
         <div class="field-group">
-          <label for="username">Username or email</label>
+          <label for="username">Username</label>
           <div class="input-shell">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20 21a8 8 0 0 0-16 0M12 13a5 5 0 1 0 0-10 5 5 0 0 0 0 10Z" />
@@ -93,7 +93,7 @@
           <label class="remember-option" for="rememberUsername">
             <input id="rememberUsername" name="rememberUsername" type="checkbox" autocomplete="off" />
             <span aria-hidden="true"></span>
-            Remember me
+            Remember username
           </label>
           <button class="forgot-password" id="forgotPassword" type="button">
             Forgot password?
@@ -126,7 +126,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Zm-3 9 2 2 4-4" />
         </svg>
-        <span>Development access · Credentials are checked in this browser</span>
+        <span>Secure access · Password verification is handled by Supabase Auth</span>
       </footer>
     </section>
   </main>

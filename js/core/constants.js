@@ -70,4 +70,3 @@ export const DASHBOARD_ACTION = Object.freeze({
 
 export const VALID_RANGES = Object.freeze(Object.keys(RANGE_DEFINITIONS));
 export const VALID_CHART_MODES = Object.freeze(Object.values(CHART_MODE));
-

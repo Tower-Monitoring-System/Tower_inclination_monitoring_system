@@ -10,7 +10,7 @@ import {
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
 import { ApiService } from "./services/apiService.js";
-import { AuthService } from "./services/authService.js?v=20260823.9";
+import { AuthService } from "./services/authService.js?v=20260823.10";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
 
 const initialState = {
@@ -176,7 +176,7 @@ function handleDashboardAction(event) {
       dashboard.showToast(`Auto-refresh ${event.detail.enabled ? "enabled" : "paused"}.`, "info");
       break;
     case DASHBOARD_ACTION.SIGN_OUT:
-      authService.signOut();
+      void authService.signOut();
       break;
     default:
       window.console.warn("Unknown dashboard action ignored.", action);
@@ -257,7 +257,8 @@ function handlePageHide(event) {
 async function bootstrap() {
   try {
     authService = new AuthService();
-    if (!authService.guardDashboard()) {
+    const identity = await authService.guardDashboard();
+    if (!identity) {
       return;
     }
 
@@ -266,9 +267,16 @@ async function bootstrap() {
     apiService = new ApiService();
     mqttService = new MqttService();
     dashboard = new Dashboard(store.asReadonly());
-    dashboard.setIdentity(authService.getUsername());
+    dashboard.setIdentity(identity.displayName || identity.username);
     dashboard.addEventListener("action", handleDashboardAction);
     registerServiceEvents();
+    cleanupCallbacks.push(
+      authService.onAuthStateChange((event) => {
+        if (event === "SIGNED_OUT") {
+          authService.redirect("sign-in.html");
+        }
+      })
+    );
     startAutoRefresh();
     window.addEventListener("pagehide", handlePageHide);
 
@@ -276,6 +284,10 @@ async function bootstrap() {
     await refreshDashboard({ initial: true });
   } catch (error) {
     window.console.error("Dashboard initialization failed.", error);
+    if (!authService?.identity) {
+      window.location.replace("./sign-in.html?auth=unavailable");
+      return;
+    }
     document.documentElement.classList.remove("auth-pending");
     document.body?.classList.remove("dashboard-loading");
     dashboard?.showToast("Dashboard loaded with limited interactivity. Please refresh the page.", "error");

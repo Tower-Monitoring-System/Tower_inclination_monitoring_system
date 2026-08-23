@@ -24,8 +24,7 @@ export const MQTT_CONFIG = Object.freeze({
   reconnectDelayMs: 5000
 });
 
-export const SUPABASE_CONFIG = Object.freeze({
-  url: "https://ruwchblgpynvfwmvrgpj.supabase.co",
-  publishableKey: "sb_publishable_uYIKwgig--EPLHTEXcoBFA_RLS0gZWR"
+export const AUTH_CONFIG = Object.freeze({
+  signInDelayMs: 250,
+  redirectDelayMs: 300
 });
-

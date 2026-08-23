@@ -1,16 +1,24 @@
-import { AUTH_CONFIG } from "../core/config.js";
+import { SUPABASE_CONFIG } from "../core/supabaseConfig.js";
 import { STORAGE_KEYS } from "../core/constants.js";
+import { getSupabaseClient } from "./supabaseClient.js";
+
+const DEFAULT_IDENTITY = Object.freeze({
+  username: "Operator",
+  displayName: "Operator",
+  role: "operator"
+});
 
 export class AuthService {
-  constructor(config = AUTH_CONFIG, browserWindow = window) {
-    this.config = config;
+  constructor(browserWindow = window) {
     this.window = browserWindow;
+    this.client = getSupabaseClient();
+    this.identity = null;
   }
 
   readStorage(key) {
     try {
       return this.window.localStorage.getItem(key);
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -19,7 +27,7 @@ export class AuthService {
     try {
       this.window.localStorage.setItem(key, value);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
@@ -27,161 +35,157 @@ export class AuthService {
   removeStorage(key) {
     try {
       this.window.localStorage.removeItem(key);
-    } catch (error) {
-      // Storage may be unavailable in privacy-restricted browser contexts.
+    } catch {
+      // Browser storage may be unavailable in privacy-restricted contexts.
     }
   }
 
-  readSession() {
-    const rawSession = this.readStorage(STORAGE_KEYS.session);
-
-    if (!rawSession) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(rawSession);
-    } catch (error) {
-      this.removeStorage(STORAGE_KEYS.session);
-      return null;
-    }
-  }
-
-  clearSession() {
-    const session = this.readSession();
-    const rememberedUsername = this.readStorage(STORAGE_KEYS.rememberedUsername);
-    const username = rememberedUsername || (session?.rememberUsername ? session.username : "");
-
-    if (username) {
-      this.writeStorage(
-        STORAGE_KEYS.session,
-        JSON.stringify({
-          version: 1,
-          authenticated: false,
-          username,
-          rememberUsername: true,
-          signedInAt: 0
-        })
-      );
-      return;
-    }
-
-    this.removeStorage(STORAGE_KEYS.session);
-  }
-
-  isAuthenticated() {
-    const session = this.readSession();
-
-    if (!session || session.version !== 1) {
-      return false;
-    }
-
-    if (session.authenticated !== true) {
-      return false;
-    }
-
-    const age = Date.now() - session.signedInAt;
-    const valid =
-      session.authenticated === true &&
-      session.username === this.config.username &&
-      Number.isFinite(age) &&
-      age >= 0 &&
-      age < this.config.sessionDurationMs;
-
-    if (!valid) {
-      this.clearSession();
-    }
-
-    return valid;
-  }
-
-  authenticate(username, password) {
-    return username === this.config.username && password === this.config.password;
-  }
-
-  createSession(username, options = {}) {
-    if (username !== this.config.username) {
-      return false;
-    }
-
-    const saved = this.writeStorage(
-      STORAGE_KEYS.session,
-      JSON.stringify({
-        version: 1,
-        authenticated: true,
-        username,
-        rememberUsername: Boolean(options.rememberUsername),
-        signedInAt: Date.now()
-      })
-    );
-
-    if (saved) {
-      this.rememberUsername(username, Boolean(options.rememberUsername));
-    }
-
-    return saved && this.isAuthenticated();
-  }
-
-  signIn(username, password, options = {}) {
-    if (!this.authenticate(username, password)) {
-      this.clearSession();
-      return false;
-    }
-
-    return this.createSession(username, options);
-  }
-
-  getUsername() {
-    return this.readSession()?.username || "Operator";
+  normalizeUsername(value) {
+    return typeof value === "string" ? value.trim().toLowerCase() : "";
   }
 
   getRememberedUsername() {
-    const rememberedUsername = this.readStorage(STORAGE_KEYS.rememberedUsername);
-    if (rememberedUsername) {
-      return rememberedUsername;
-    }
-
-    const session = this.readSession();
-    return session?.rememberUsername && session.username ? session.username : "";
+    return this.readStorage(STORAGE_KEYS.rememberedUsername) || "";
   }
 
   rememberUsername(username, shouldRemember) {
     if (shouldRemember) {
-      return this.writeStorage(STORAGE_KEYS.rememberedUsername, username);
+      return this.writeStorage(
+        STORAGE_KEYS.rememberedUsername,
+        this.normalizeUsername(username)
+      );
     }
 
     this.removeStorage(STORAGE_KEYS.rememberedUsername);
     return true;
   }
 
+  async getVerifiedUser() {
+    const { data, error } = await this.client.auth.getUser();
+    if (error || !data?.user) {
+      return null;
+    }
+    return data.user;
+  }
+
+  async loadOwnProfile(userId) {
+    const { data, error } = await this.client
+      .from("profiles")
+      .select("id, username, display_name, role")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error("The signed-in profile could not be loaded.", { cause: error });
+    }
+
+    if (!data || data.role !== "owner") {
+      return null;
+    }
+
+    return Object.freeze({
+      id: data.id,
+      username: data.username,
+      displayName: data.display_name || data.username,
+      role: data.role
+    });
+  }
+
+  async getAuthenticatedIdentity() {
+    const user = await this.getVerifiedUser();
+    if (!user) {
+      this.identity = null;
+      return null;
+    }
+
+    const profile = await this.loadOwnProfile(user.id);
+    if (!profile) {
+      await this.client.auth.signOut({ scope: "local" });
+      this.identity = null;
+      return null;
+    }
+
+    this.identity = profile;
+    return profile;
+  }
+
+  async signIn(username, password, options = {}) {
+    const normalizedUsername = this.normalizeUsername(username);
+    if (!normalizedUsername || typeof password !== "string" || !password) {
+      return { ok: false, reason: "invalid_credentials" };
+    }
+
+    const { data, error } = await this.client.functions.invoke(
+      SUPABASE_CONFIG.usernameLoginFunction,
+      {
+        body: {
+          username: normalizedUsername,
+          password
+        }
+      }
+    );
+
+    if (error || !data?.access_token || !data?.refresh_token) {
+      return { ok: false, reason: "invalid_credentials" };
+    }
+
+    const { error: setSessionError } = await this.client.auth.setSession({
+      access_token: data.access_token,
+      refresh_token: data.refresh_token
+    });
+
+    if (setSessionError) {
+      await this.client.auth.signOut({ scope: "local" });
+      return { ok: false, reason: "session_error" };
+    }
+
+    const identity = await this.getAuthenticatedIdentity();
+    if (!identity || this.normalizeUsername(identity.username) !== normalizedUsername) {
+      await this.client.auth.signOut({ scope: "local" });
+      this.identity = null;
+      return { ok: false, reason: "not_authorized" };
+    }
+
+    this.rememberUsername(normalizedUsername, Boolean(options.rememberUsername));
+    return { ok: true, identity };
+  }
+
+  async guardDashboard() {
+    const identity = await this.getAuthenticatedIdentity();
+    if (!identity) {
+      this.redirect("sign-in.html");
+      return null;
+    }
+    return identity;
+  }
+
+  async guardSignIn() {
+    const identity = await this.getAuthenticatedIdentity();
+    if (identity) {
+      this.redirect("index.html");
+      return false;
+    }
+    return true;
+  }
+
+  getUsername() {
+    return this.identity?.displayName || this.identity?.username || DEFAULT_IDENTITY.displayName;
+  }
+
+  onAuthStateChange(callback) {
+    const { data } = this.client.auth.onAuthStateChange((event, session) => {
+      callback(event, session);
+    });
+    return () => data.subscription.unsubscribe();
+  }
+
   redirect(relativePage) {
     this.window.location.replace(`./${relativePage}`);
   }
 
-  guardDashboard() {
-    if (!this.isAuthenticated()) {
-      this.redirect("sign-in.html");
-      return false;
-    }
-
-    return true;
-  }
-
-  guardSignIn() {
-    if (this.isAuthenticated()) {
-      this.redirect("index.html");
-      return false;
-    }
-
-    return true;
-  }
-
-  signOut() {
-    const session = this.readSession();
-    if (session?.rememberUsername && session.username) {
-      this.rememberUsername(session.username, true);
-    }
-    this.clearSession();
+  async signOut() {
+    await this.client.auth.signOut({ scope: "local" });
+    this.identity = null;
     this.redirect("sign-in.html");
   }
 }

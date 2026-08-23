@@ -1,14 +1,27 @@
 import { AUTH_CONFIG } from "./core/config.js";
-import { AuthService } from "./services/authService.js?v=20260823.9";
+import { AuthService } from "./services/authService.js?v=20260823.10";
 
-const authService = new AuthService();
+let authService = null;
 
-if (authService.guardSignIn()) {
-  document.documentElement.classList.remove("auth-pending");
-  initializeSignIn();
+bootstrapSignIn();
+
+async function bootstrapSignIn() {
+  try {
+    authService = new AuthService();
+    if (!(await authService.guardSignIn())) {
+      return;
+    }
+
+    document.documentElement.classList.remove("auth-pending");
+    initializeSignIn();
+  } catch (error) {
+    window.console.error("Authentication initialization failed.", error);
+    document.documentElement.classList.remove("auth-pending");
+    initializeSignIn({ unavailableMessage: error.message });
+  }
 }
 
-function initializeSignIn() {
+function initializeSignIn({ unavailableMessage = "" } = {}) {
   const form = document.getElementById("signInForm");
   const usernameInput = document.getElementById("username");
   const passwordInput = document.getElementById("password");
@@ -65,7 +78,7 @@ function initializeSignIn() {
   function validateForm() {
     const usernameIsEmpty = usernameInput.value.trim().length === 0;
     const passwordIsEmpty = passwordInput.value.length === 0;
-    setFieldError(usernameInput, usernameIsEmpty ? "Enter your username or email." : "");
+    setFieldError(usernameInput, usernameIsEmpty ? "Enter your username." : "");
     setFieldError(passwordInput, passwordIsEmpty ? "Enter your password." : "");
 
     if (usernameIsEmpty) {
@@ -81,7 +94,7 @@ function initializeSignIn() {
 
   function setLoading(isLoading) {
     submitting = isLoading;
-    submitButton.disabled = isLoading;
+    submitButton.disabled = isLoading || Boolean(unavailableMessage);
     submitButton.classList.toggle("is-loading", isLoading);
     submitButton.setAttribute("aria-busy", isLoading ? "true" : "false");
     submitLabel.textContent = isLoading ? "Signing in..." : "Sign in";
@@ -97,7 +110,7 @@ function initializeSignIn() {
 
   async function handleSubmit(event) {
     event.preventDefault();
-    if (submitting) {
+    if (submitting || unavailableMessage || !authService) {
       return;
     }
 
@@ -108,30 +121,37 @@ function initializeSignIn() {
 
     const username = usernameInput.value.trim();
     const password = passwordInput.value;
-    const shouldRememberUsername =
-      rememberInput.checked || new FormData(form).has("rememberUsername");
+    const shouldRememberUsername = rememberInput.checked;
     setLoading(true);
-    await new Promise((resolve) => window.setTimeout(resolve, AUTH_CONFIG.signInDelayMs));
 
-    if (!authService.authenticate(username, password)) {
-      authService.clearSession();
-      showAuthenticationError("The username or password is incorrect. Check your credentials and try again.");
-      showToast("Sign in failed. Please try again.", "error");
+    try {
+      if (AUTH_CONFIG.signInDelayMs > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, AUTH_CONFIG.signInDelayMs));
+      }
+
+      const result = await authService.signIn(username, password, {
+        rememberUsername: shouldRememberUsername
+      });
+
+      if (!result.ok) {
+        passwordInput.value = "";
+        showAuthenticationError("The username or password is incorrect.");
+        showToast("Sign in failed. Please try again.", "error");
+        setLoading(false);
+        passwordInput.focus();
+        return;
+      }
+
+      submitLabel.textContent = "Access verified";
+      showToast("Access verified. Opening dashboard...", "success");
+      window.setTimeout(() => authService.redirect("index.html"), AUTH_CONFIG.redirectDelayMs);
+    } catch (error) {
+      window.console.error("Sign in request failed.", error);
+      passwordInput.value = "";
+      showAuthenticationError("Sign in service is temporarily unavailable. Please try again.");
+      showToast("Unable to contact the authentication service.", "error");
       setLoading(false);
-      usernameInput.focus();
-      return;
     }
-
-    if (!authService.createSession(username, { rememberUsername: shouldRememberUsername })) {
-      showAuthenticationError("A browser session could not be created. Enable browser storage and try again.");
-      showToast("Browser storage is unavailable.", "error");
-      setLoading(false);
-      return;
-    }
-
-    submitLabel.textContent = "Access verified";
-    showToast("Access verified. Opening dashboard...", "success");
-    window.setTimeout(() => authService.redirect("index.html"), AUTH_CONFIG.redirectDelayMs);
   }
 
   passwordToggle.addEventListener("click", () => {
@@ -144,24 +164,27 @@ function initializeSignIn() {
   });
 
   forgotPassword.addEventListener("click", () => {
-    showToast("Password recovery will be available when server authentication is connected.", "info");
+    showToast("Password changes are managed in Supabase Authentication for these accounts.", "info");
   });
+
   usernameInput.addEventListener("input", () => {
     if (usernameInput.value.trim()) {
       setFieldError(usernameInput, "");
     }
     clearAuthenticationError();
   });
+
   passwordInput.addEventListener("input", () => {
     if (passwordInput.value) {
       setFieldError(passwordInput, "");
     }
     clearAuthenticationError();
   });
+
   form.addEventListener("submit", handleSubmit);
 
   function restoreRememberedUsername() {
-    const rememberedUsername = authService.getRememberedUsername();
+    const rememberedUsername = authService?.getRememberedUsername() || "";
     if (rememberedUsername) {
       if (!usernameInput.value) {
         usernameInput.value = rememberedUsername;
@@ -175,8 +198,13 @@ function initializeSignIn() {
     }
   }
 
-  restoreRememberedUsername();
-  document.addEventListener("DOMContentLoaded", restoreRememberedUsername, { once: true });
-  window.addEventListener("pageshow", restoreRememberedUsername, { once: true });
-  window.setTimeout(restoreRememberedUsername, 250);
+  if (unavailableMessage) {
+    showAuthenticationError(unavailableMessage);
+    submitButton.disabled = true;
+  } else {
+    restoreRememberedUsername();
+    document.addEventListener("DOMContentLoaded", restoreRememberedUsername, { once: true });
+    window.addEventListener("pageshow", restoreRememberedUsername, { once: true });
+    window.setTimeout(restoreRememberedUsername, 250);
+  }
 }
