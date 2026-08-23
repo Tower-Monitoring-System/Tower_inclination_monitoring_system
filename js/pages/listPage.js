@@ -74,7 +74,6 @@ export class ListPage {
     this.error = null;
     this.active = false;
     this.filterTouched = false;
-    this.lastUpdatedAt = 0;
     this.pollingTimer = null;
     this.refreshPromise = null;
     this.elements = this.collectElements();
@@ -103,9 +102,6 @@ export class ListPage {
       timeHeader: byId("listTimeHeader"),
       recordSummary: byId("listRecordSummary"),
       pagination: byId("listPagination"),
-      lastUpdated: byId("listLastUpdated"),
-      syncSummary: this.document.querySelector(".list-sync-summary"),
-      pollingStatus: byId("listPollingStatus"),
       liveStatus: byId("listLiveStatus")
     };
   }
@@ -158,7 +154,6 @@ export class ListPage {
       return;
     }
     this.active = true;
-    this.renderPollingStatus();
     if (this.refreshPromise) {
       void this.refreshPromise.finally(() => {
         if (this.active) {
@@ -174,7 +169,6 @@ export class ListPage {
     this.active = false;
     this.clearPollingTimer();
     this.service.cancelActiveRequest();
-    this.renderPollingStatus();
   }
 
   changePeriod(period) {
@@ -255,9 +249,6 @@ export class ListPage {
         }
         this.populateYearPicker(this.records);
         this.syncPickerValues();
-        this.lastUpdatedAt = Number.isFinite(Date.parse(result.meta.generatedAt))
-          ? Date.parse(result.meta.generatedAt)
-          : Date.now();
         this.error = null;
 
         if (result.invalidRows.length) {
@@ -309,10 +300,10 @@ export class ListPage {
     this.elements.filterDescription.textContent = copy.description;
     this.syncPickerValues();
     this.renderSortHeaders();
-    this.renderSyncState();
+    this.elements.refreshButton.disabled = this.loading;
+    this.elements.refreshButton.classList.toggle("is-loading", this.loading);
     this.renderError();
     this.renderTable();
-    this.renderPollingStatus();
   }
 
   renderSortHeaders() {
@@ -324,31 +315,6 @@ export class ListPage {
       "aria-sort",
       this.sortField === "time" ? this.sortDirection : "none"
     );
-  }
-
-  renderSyncState() {
-    this.elements.syncSummary.classList.toggle("is-loading", this.loading);
-    this.elements.syncSummary.classList.toggle("is-error", Boolean(this.error));
-    this.elements.syncSummary.classList.toggle(
-      "is-ready",
-      !this.loading && !this.error && this.lastUpdatedAt > 0
-    );
-
-    if (this.loading) {
-      this.elements.lastUpdated.textContent = "Synchronizing…";
-    } else if (this.lastUpdatedAt > 0) {
-      this.elements.lastUpdated.textContent = new Intl.DateTimeFormat("en-US", {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit"
-      }).format(this.lastUpdatedAt);
-    } else {
-      this.elements.lastUpdated.textContent = "Not yet";
-    }
-
-    this.elements.refreshButton.disabled = this.loading;
-    this.elements.refreshButton.classList.toggle("is-loading", this.loading);
   }
 
   renderError() {
@@ -570,13 +536,6 @@ export class ListPage {
       return;
     }
     void this.refresh({ automatic: true });
-  }
-
-  renderPollingStatus() {
-    const seconds = Math.round(this.config.pollingIntervalMs / 1000);
-    this.elements.pollingStatus.textContent = this.active
-      ? `Auto-refresh every ${seconds} seconds while this page is open`
-      : "Auto-refresh paused while this page is closed";
   }
 
   announce(message) {
