@@ -242,6 +242,9 @@ export class AlertsPage {
   }
 
   renderSyncState() {
+    if (!this.elements.syncSummary || !this.elements.lastUpdated) {
+      return;
+    }
     this.elements.syncSummary.classList.toggle("is-loading", this.loading);
     this.elements.syncSummary.classList.toggle("is-error", Boolean(this.error));
     this.elements.syncSummary.classList.toggle(

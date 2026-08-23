@@ -482,13 +482,6 @@
           aria-labelledby="alertsPageTitle"
           hidden
         >
-          <header class="alerts-page-heading">
-            <div class="alerts-sync-summary" id="alertsSyncSummary" aria-live="polite">
-              <span aria-hidden="true"></span>
-              <p><small>Last synchronized</small><strong id="alertsLastUpdated">Not yet</strong></p>
-            </div>
-          </header>
-
           <section class="alerts-summary-grid" aria-label="Alert summary">
             <article class="alert-metric total">
               <span class="alert-metric-icon"><svg aria-hidden="true"><use href="#icon-alert"></use></svg></span>
@@ -580,10 +573,6 @@
             </div>
           </section>
 
-          <footer class="alerts-page-footer">
-            <p><span class="status-dot normal" aria-hidden="true"></span><span id="alertsPollingStatus">Updates while this page is open</span></p>
-            <span>Thresholds are managed in system constants · Event times match the sensor source</span>
-          </footer>
           <p class="sr-only" id="alertsLiveStatus" role="status" aria-live="polite"></p>
         </section>
       </main>
