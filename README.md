@@ -85,6 +85,6 @@ See `SUPABASE_SETUP.md` for setup and deployment instructions.
 
 ## Sensor Data List
 
-The List page reads validated Google Sheets data through an authenticated Supabase Edge Function. It supports Day/Month/Year filtering, Date/Time sorting, pagination, resilient polling, battery warnings, and native `.xlsx` export.
+The List page reads validated Google Sheets data through an authenticated Supabase Edge Function. It supports Day/Month filtering, Date/Time sorting, pagination, resilient polling, battery warnings, and native `.xlsx` export.
 
 See `SENSOR_DATA_SETUP.md` for the complete Google Sheets, Apps Script, and Supabase deployment guide.

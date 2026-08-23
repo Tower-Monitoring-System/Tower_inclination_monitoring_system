@@ -1,6 +1,6 @@
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_PATTERN = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
-const PERIODS = new Set(["day", "month", "year"]);
+const PERIODS = new Set(["day", "month"]);
 const SORT_FIELDS = new Set(["date", "time"]);
 const SORT_DIRECTIONS = new Set(["ascending", "descending"]);
 

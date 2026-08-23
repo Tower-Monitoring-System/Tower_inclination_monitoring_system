@@ -15,10 +15,6 @@ const PERIOD_COPY = Object.freeze({
   month: Object.freeze({
     title: "View by month",
     description: "Select a month to review all readings recorded in that month"
-  }),
-  year: Object.freeze({
-    title: "View by year",
-    description: "Select a year to review all readings recorded in that year"
   })
 });
 
@@ -91,7 +87,6 @@ export class ListPage {
       filterDescription: byId("listFilterDescription"),
       dayPicker: byId("listDayPicker"),
       monthPicker: byId("listMonthPicker"),
-      yearPicker: byId("listYearPicker"),
       refreshButton: byId("listRefreshButton"),
       exportButton: byId("listExportButton"),
       errorBanner: byId("listErrorBanner"),
@@ -113,24 +108,6 @@ export class ListPage {
   initializePickers() {
     this.elements.dayPicker.value = this.selectedDate;
     this.elements.monthPicker.value = this.selectedDate.slice(0, 7);
-    this.populateYearPicker([]);
-  }
-
-  populateYearPicker(readings) {
-    const currentYear = new Date().getFullYear();
-    const selectedYear = this.selectedDate.slice(0, 4) || String(currentYear);
-    const years = new Set([selectedYear, String(currentYear)]);
-    readings.forEach((reading) => years.add(reading.date.slice(0, 4)));
-    const sortedYears = [...years].sort((left, right) => Number(right) - Number(left));
-    const fragment = this.document.createDocumentFragment();
-    sortedYears.forEach((year) => {
-      const option = this.document.createElement("option");
-      option.value = year;
-      option.textContent = year;
-      fragment.append(option);
-    });
-    this.elements.yearPicker.replaceChildren(fragment);
-    this.elements.yearPicker.value = selectedYear;
   }
 
   bindEvents() {
@@ -187,13 +164,7 @@ export class ListPage {
       return;
     }
 
-    if (this.period === "day") {
-      this.selectedDate = value;
-    } else if (this.period === "month") {
-      this.selectedDate = `${value}-01`;
-    } else {
-      this.selectedDate = `${value}-01-01`;
-    }
+    this.selectedDate = this.period === "day" ? value : `${value}-01`;
     this.currentPage = 1;
     this.filterTouched = true;
     this.syncPickerValues();
@@ -203,7 +174,6 @@ export class ListPage {
   syncPickerValues() {
     this.elements.dayPicker.value = this.selectedDate;
     this.elements.monthPicker.value = this.selectedDate.slice(0, 7);
-    this.populateYearPicker(this.records);
     this.document.querySelectorAll("[data-list-picker]").forEach((picker) => {
       picker.hidden = picker.dataset.listPicker !== this.period;
     });
@@ -247,7 +217,6 @@ export class ListPage {
         if (!this.filterTouched && latestDate) {
           this.selectedDate = latestDate;
         }
-        this.populateYearPicker(this.records);
         this.syncPickerValues();
         this.error = null;
 
@@ -287,9 +256,7 @@ export class ListPage {
   getFilteredReadings() {
     const selectedValue = this.period === "day"
       ? this.selectedDate
-      : this.period === "month"
-        ? this.selectedDate.slice(0, 7)
-        : this.selectedDate.slice(0, 4);
+      : this.selectedDate.slice(0, 7);
     const filtered = filterSensorReadings(this.records, this.period, selectedValue);
     return sortSensorReadings(filtered, this.sortField, this.sortDirection);
   }
@@ -489,9 +456,7 @@ export class ListPage {
 
     const periodValue = this.period === "day"
       ? this.selectedDate
-      : this.period === "month"
-        ? this.selectedDate.slice(0, 7)
-        : this.selectedDate.slice(0, 4);
+      : this.selectedDate.slice(0, 7);
     try {
       downloadSensorDataWorkbook(
         readings,

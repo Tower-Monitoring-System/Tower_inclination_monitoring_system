@@ -9,7 +9,7 @@ import {
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
-import { ListPage } from "./pages/listPage.js?v=20260823.2";
+import { ListPage } from "./pages/listPage.js?v=20260824.1";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
