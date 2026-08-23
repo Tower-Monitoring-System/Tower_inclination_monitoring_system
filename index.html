@@ -401,6 +401,7 @@
               <div class="list-period-tabs" role="group" aria-label="Sensor data period">
                 <button type="button" class="is-active" data-list-period="day" aria-pressed="true">Day</button>
                 <button type="button" data-list-period="month" aria-pressed="false">Month</button>
+                <button type="button" data-list-period="year" aria-pressed="false">Year</button>
               </div>
 
               <div class="list-picker" aria-label="Selected sensor data period">
@@ -409,6 +410,8 @@
                 <input id="listDayPicker" type="date" data-list-picker="day" />
                 <label class="sr-only" for="listMonthPicker">Select month</label>
                 <input id="listMonthPicker" type="month" data-list-picker="month" hidden />
+                <label class="sr-only" for="listYearPicker">Select year</label>
+                <select id="listYearPicker" data-list-picker="year" hidden></select>
               </div>
 
               <div class="list-actions">
