@@ -15,22 +15,8 @@
   --success: #72e5b3;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
 body {
   width: 100%;
-  min-height: 100%;
-  margin: 0;
-}
-
-html.auth-pending body {
-  visibility: hidden;
-}
-
-body {
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
@@ -46,15 +32,6 @@ body {
   background-position: center;
   background-repeat: no-repeat;
   background-size: cover;
-}
-
-button,
-input {
-  font: inherit;
-}
-
-button {
-  color: inherit;
 }
 
 .sign-in-page {
@@ -698,16 +675,5 @@ button {
 
   .security-note {
     margin-top: 17px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
   }
 }

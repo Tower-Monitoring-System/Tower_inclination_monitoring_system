@@ -7,9 +7,9 @@
   <meta name="theme-color" content="#082d57" />
   <title>Dashboard | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./css/style.css?v=20260823.1" />
-  <script src="./js/auth-config.js"></script>
-  <script src="./js/auth.js"></script>
+  <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
+  <link rel="stylesheet" href="./css/components.css?v=20260823.13" />
+  <link rel="stylesheet" href="./css/dashboard.css?v=20260823.13" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -354,6 +354,7 @@
                 <span><i class="status-dot normal"></i><b id="normalTowerCount">5</b> Normal</span>
                 <span><i class="status-dot warning"></i><b id="warningTowerCount">2</b> Warning</span>
                 <span><i class="status-dot alert"></i><b id="criticalTowerCount">1</b> Alert</span>
+                <span><i class="status-dot offline"></i><b id="offlineRankingCount">0</b> Offline</span>
               </div>
             </div>
           </div>
@@ -384,6 +385,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script src="./js/app.js?v=20260823.1"></script>
+  <script type="module" src="./js/app.js?v=20260823.9"></script>
 </body>
 </html>

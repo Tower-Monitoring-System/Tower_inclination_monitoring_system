@@ -1,0 +1,137 @@
+:root {
+  color-scheme: light;
+  --sidebar-width: 264px;
+  --sidebar-bg: #062b52;
+  --sidebar-deep: #031f3d;
+  --page-bg: #f4f7fb;
+  --surface: #ffffff;
+  --surface-soft: #f8fafc;
+  --text: #142033;
+  --text-strong: #0b1628;
+  --muted: #6d7b8d;
+  --muted-light: #94a1b1;
+  --border: #e3e9f0;
+  --border-strong: #d7e0ea;
+  --primary: #1f73ed;
+  --primary-strong: #145fcf;
+  --primary-soft: #eaf3ff;
+  --cyan: #22b8d6;
+  --success: #18b77d;
+  --success-soft: #e7f8f2;
+  --warning: #f59e0b;
+  --warning-soft: #fff5dd;
+  --danger: #ed3548;
+  --danger-soft: #ffedf0;
+  --offline: #a2acb9;
+  --shadow-sm: 0 4px 14px rgba(20, 46, 77, 0.055);
+  --shadow-md: 0 13px 36px rgba(20, 46, 77, 0.08);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-width: 320px;
+  min-height: 100%;
+  margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+html.auth-pending body {
+  visibility: hidden;
+}
+
+body {
+  overflow-x: hidden;
+  color: var(--text);
+  background: var(--page-bg);
+  font-family:
+    Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+button,
+a,
+input {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+svg {
+  display: block;
+}
+
+.icon-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.sr-only {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 1000;
+  top: 12px;
+  left: 50%;
+  padding: 10px 16px;
+  border-radius: 9px;
+  color: #fff;
+  background: var(--primary-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translate(-50%, -150%);
+  transition: transform 160ms ease;
+}
+
+.skip-link:focus {
+  transform: translate(-50%, 0);
+}
+
+:focus-visible {
+  outline: 3px solid rgba(31, 115, 237, 0.45);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

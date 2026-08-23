@@ -10,10 +10,9 @@
   <meta name="theme-color" content="#071421" />
   <title>Sign In | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./css/sign-in.css" />
-  <script src="./js/auth-config.js"></script>
-  <script src="./js/auth.js"></script>
-  <script src="./js/sign-in.js" defer></script>
+  <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
+  <link rel="stylesheet" href="./css/sign-in.css?v=20260823.2" />
+  <script type="module" src="./js/sign-in.js?v=20260823.19"></script>
 </head>
 <body data-page="sign-in">
   <main class="sign-in-page">
@@ -32,8 +31,8 @@
       <header class="brand-lockup">
         <img src="./assets/logo.svg" alt="" width="52" height="52" />
         <div>
-          <span>Monitoring System</span>
-          <strong>Tower Inclination</strong>
+          <strong>Monitoring System</strong>
+          <span>Tower Inclination</span>
         </div>
       </header>
 
@@ -92,7 +91,7 @@
 
         <div class="form-options">
           <label class="remember-option" for="rememberUsername">
-            <input id="rememberUsername" name="rememberUsername" type="checkbox" />
+            <input id="rememberUsername" name="rememberUsername" type="checkbox" autocomplete="off" />
             <span aria-hidden="true"></span>
             Remember me
           </label>
@@ -127,7 +126,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M12 3 5 6v5c0 4.6 2.8 8.1 7 10 4.2-1.9 7-5.4 7-10V6l-7-3Zm-3 9 2 2 4-4" />
         </svg>
-        <span>Development access · Authentication information is verified on the server</span>
+        <span>Development access · Credentials are checked in this browser</span>
       </footer>
     </section>
   </main>
