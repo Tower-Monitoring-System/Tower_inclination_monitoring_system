@@ -1,2 +1,5 @@
 [functions.username-login]
 verify_jwt = false
+
+[functions.sensor-data]
+verify_jwt = true

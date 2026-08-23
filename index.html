@@ -5,11 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Tower Inclination Monitoring System Dashboard" />
   <meta name="theme-color" content="#082d57" />
-  <title>Dashboard | Tower Inclination Monitoring System</title>
+  <title>Overview | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
   <link rel="stylesheet" href="./css/components.css?v=20260823.13" />
   <link rel="stylesheet" href="./css/dashboard.css?v=20260823.13" />
+  <link rel="stylesheet" href="./css/list.css?v=20260823.2" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -151,7 +152,7 @@
             <svg aria-hidden="true"><use href="#icon-menu"></use></svg>
           </button>
           <div class="topbar-heading">
-            <strong>Tower Inclination Monitoring System</strong>
+            <strong id="topbarTitle">Tower Inclination Monitoring System</strong>
           </div>
         </div>
 
@@ -188,6 +189,7 @@
       </header>
 
       <main class="dashboard-content" id="dashboardContent" tabindex="-1">
+        <div class="page-view" id="overviewPage" data-page-view="Overview">
         <section class="page-intro" aria-labelledby="pageTitle">
           <div>
             <h1 id="pageTitle">System overview</h1>
@@ -380,6 +382,112 @@
             </label>
           </div>
         </footer>
+        </div>
+
+        <section
+          class="page-view list-page"
+          id="listPage"
+          data-page-view="List"
+          aria-labelledby="listPageTitle"
+          hidden
+        >
+          <header class="list-page-heading">
+            <div>
+              <p class="eyebrow"><span aria-hidden="true"></span>Google Sheets sensor stream</p>
+              <h1 id="listPageTitle">Sensor Data List</h1>
+              <p>Review validated inclination and battery readings by day, month, or year.</p>
+            </div>
+            <div class="list-sync-summary" aria-live="polite">
+              <span class="list-sync-indicator" id="listSyncIndicator" aria-hidden="true"></span>
+              <p><span>Last synchronized</span><strong id="listLastUpdated">Not yet</strong></p>
+            </div>
+          </header>
+
+          <div class="list-panel">
+            <div class="list-toolbar">
+              <div class="list-filter-copy">
+                <strong id="listFilterTitle">View by day</strong>
+                <span id="listFilterDescription">Select a date to view sensor data for that day.</span>
+              </div>
+
+              <div class="list-period-tabs" role="group" aria-label="Sensor data period">
+                <button type="button" class="is-active" data-list-period="day" aria-pressed="true">Day</button>
+                <button type="button" data-list-period="month" aria-pressed="false">Month</button>
+                <button type="button" data-list-period="year" aria-pressed="false">Year</button>
+              </div>
+
+              <div class="list-picker" aria-label="Selected sensor data period">
+                <svg aria-hidden="true"><use href="#icon-calendar"></use></svg>
+                <label class="sr-only" for="listDayPicker">Select day</label>
+                <input id="listDayPicker" type="date" data-list-picker="day" />
+                <label class="sr-only" for="listMonthPicker">Select month</label>
+                <input id="listMonthPicker" type="month" data-list-picker="month" hidden />
+                <label class="sr-only" for="listYearPicker">Select year</label>
+                <select id="listYearPicker" data-list-picker="year" hidden></select>
+              </div>
+
+              <div class="list-actions">
+                <button class="secondary-button" id="listRefreshButton" type="button">
+                  <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+                  <span>Refresh</span>
+                </button>
+                <button class="secondary-button" id="listExportButton" type="button" disabled>
+                  <svg aria-hidden="true"><use href="#icon-download"></use></svg>
+                  <span>Export .xlsx</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="list-error-banner" id="listErrorBanner" role="alert" hidden>
+              <span aria-hidden="true">!</span>
+              <p><strong>Sensor data is temporarily unavailable.</strong><small id="listErrorMessage">Please try again.</small></p>
+              <button type="button" id="listErrorRetry">Try again</button>
+            </div>
+
+            <div class="sensor-table-wrap" id="sensorTableWrap">
+              <table class="sensor-table">
+                <caption class="sr-only">Google Sheets inclination sensor data</caption>
+                <thead>
+                  <tr>
+                    <th scope="col" id="listDateHeader" aria-sort="descending">
+                      <button type="button" data-list-sort="date">
+                        Date <span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th scope="col" id="listTimeHeader" aria-sort="none">
+                      <button type="button" data-list-sort="time">
+                        Time <span class="sort-indicator" aria-hidden="true"></span>
+                      </button>
+                    </th>
+                    <th scope="col"><span>X</span><small>(°)</small></th>
+                    <th scope="col"><span>Y</span><small>(°)</small></th>
+                    <th scope="col"><span>Z</span><small>(°)</small></th>
+                    <th scope="col"><span>Battery</span><small>(V)</small></th>
+                  </tr>
+                </thead>
+                <tbody id="sensorTableBody">
+                  <tr class="list-state-row">
+                    <td colspan="6">
+                      <span class="list-state-spinner" aria-hidden="true"></span>
+                      <strong>Loading sensor data…</strong>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="list-pagination-bar">
+              <p id="listRecordSummary">Showing 0 entries</p>
+              <nav class="list-pagination" id="listPagination" aria-label="Sensor data pages"></nav>
+            </div>
+          </div>
+
+          <footer class="list-page-footer">
+            <p><span class="status-dot normal" aria-hidden="true"></span><span id="listPollingStatus">Updates while this page is open</span></p>
+            <span>Validated by Supabase Edge Function · Times shown in UTC+7</span>
+          </footer>
+          <p class="sr-only" id="listLiveStatus" role="status" aria-live="polite"></p>
+        </section>
       </main>
     </div>
   </div>
@@ -389,6 +497,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260823.10"></script>
+  <script type="module" src="./js/app.js?v=20260823.21"></script>
 </body>
 </html>

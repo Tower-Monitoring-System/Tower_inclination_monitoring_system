@@ -7,6 +7,7 @@ type LoginPayload = {
 
 const MIN_RESPONSE_MS = 450;
 const USERNAME_PATTERN = /^[a-z0-9._-]{3,64}$/;
+const ALLOWED_ROLES = new Set(["owner", "operator"]);
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -61,7 +62,7 @@ export default {
       .eq("username", username)
       .maybeSingle();
 
-    if (profileError || !profile || profile.role !== "owner") {
+    if (profileError || !profile || !ALLOWED_ROLES.has(profile.role)) {
       return unauthorized(startedAt);
     }
 

@@ -28,3 +28,13 @@ export const AUTH_CONFIG = Object.freeze({
   signInDelayMs: 250,
   redirectDelayMs: 300
 });
+
+export const SENSOR_DATA_CONFIG = Object.freeze({
+  edgeFunctionName: "sensor-data",
+  requestTimeoutMs: 12000,
+  pollingIntervalMs: 45000,
+  pageSize: 20,
+  maximumRecords: 20000,
+  batteryWarningVoltage: 3.7,
+  batteryCriticalVoltage: 3.3
+});

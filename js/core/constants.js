@@ -62,6 +62,7 @@ export const STORAGE_KEYS = Object.freeze({
 
 export const DASHBOARD_ACTION = Object.freeze({
   REFRESH: "refresh",
+  NAVIGATE: "navigate",
   RANGE_CHANGE: "range-change",
   CHART_MODE_CHANGE: "chart-mode-change",
   AUTO_REFRESH_CHANGE: "auto-refresh-change",

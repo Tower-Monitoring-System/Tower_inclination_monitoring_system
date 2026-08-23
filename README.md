@@ -19,7 +19,8 @@ Tower_inclination_monitoring_system/
 │   ├── global.css
 │   ├── dashboard.css
 │   ├── components.css
-│   └── sign-in.css
+│   ├── sign-in.css
+│   └── list.css
 │
 ├── js/
 │   ├── app.js
@@ -39,12 +40,20 @@ Tower_inclination_monitoring_system/
 │   │   ├── apiService.js
 │   │   ├── supabaseClient.js
 │   │   ├── mqttService.js
-│   │   └── authService.js
+│   │   ├── authService.js
+│   │   └── sensorDataService.js
 │   │
 │   ├── logic/
 │   │   ├── tiltProcessor.js
 │   │   ├── warningProcessor.js
-│   │   └── stationProcessor.js
+│   │   ├── stationProcessor.js
+│   │   └── sensorDataProcessor.js
+│   │
+│   ├── pages/
+│   │   └── listPage.js
+│   │
+│   ├── utils/
+│   │   └── xlsxExporter.js
 │   │
 │   └── components/
 │       ├── Dashboard.js
@@ -57,8 +66,13 @@ Tower_inclination_monitoring_system/
 │   ├── schema.sql
 │   │
 │   └── functions/
-│       └── username-login/
+│       ├── username-login/
+│       │   └── index.ts
+│       └── sensor-data/
 │           └── index.ts
+│
+├── google-apps-script/
+│   └── Code.gs
 └── assets/
 ```
 ---
@@ -68,3 +82,9 @@ Tower_inclination_monitoring_system/
 Authentication is handled by Supabase Auth and the `username-login` Edge Function. Passwords are not stored in the frontend source or in `public.profiles`.
 
 See `SUPABASE_SETUP.md` for setup and deployment instructions.
+
+## Sensor Data List
+
+The List page reads validated Google Sheets data through an authenticated Supabase Edge Function. It supports Day/Month/Year filtering, Date/Time sorting, pagination, resilient polling, battery warnings, and native `.xlsx` export.
+
+See `SENSOR_DATA_SETUP.md` for the complete Google Sheets, Apps Script, and Supabase deployment guide.

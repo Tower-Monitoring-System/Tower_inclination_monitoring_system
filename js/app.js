@@ -1,4 +1,4 @@
-import { Dashboard } from "./components/Dashboard.js?v=20260823.8";
+import { Dashboard } from "./components/Dashboard.js?v=20260823.9";
 import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js";
 import {
   CHART_MODE,
@@ -9,9 +9,11 @@ import {
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
+import { ListPage } from "./pages/listPage.js?v=20260823.2";
 import { ApiService } from "./services/apiService.js";
-import { AuthService } from "./services/authService.js?v=20260823.10";
+import { AuthService } from "./services/authService.js?v=20260823.11";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
+import { SensorDataService } from "./services/sensorDataService.js?v=20260823.1";
 
 const initialState = {
   stations: [],
@@ -38,10 +40,13 @@ let dashboard;
 let apiService;
 let mqttService;
 let authService;
+let listPage;
+let sensorDataService;
 let refreshPromise = null;
 let autoRefreshTimer = null;
 let analyticsTimer = null;
 const cleanupCallbacks = [];
+let currentView = "Overview";
 
 function updateConnectionStatus(serviceName, status) {
   store.setState((state) => ({
@@ -161,6 +166,16 @@ function handleDashboardAction(event) {
     case DASHBOARD_ACTION.REFRESH:
       refreshDashboard({ automatic: false });
       break;
+    case DASHBOARD_ACTION.NAVIGATE:
+      if (dashboard.setActiveView(event.detail.target)) {
+        currentView = event.detail.target;
+        if (currentView === "List") {
+          listPage.open();
+        } else {
+          listPage.close();
+        }
+      }
+      break;
     case DASHBOARD_ACTION.RANGE_CHANGE:
       if (RANGE_DEFINITIONS[event.detail.range] && event.detail.range !== state.range) {
         rebuildAnalytics({ range: event.detail.range });
@@ -176,6 +191,7 @@ function handleDashboardAction(event) {
       dashboard.showToast(`Auto-refresh ${event.detail.enabled ? "enabled" : "paused"}.`, "info");
       break;
     case DASHBOARD_ACTION.SIGN_OUT:
+      listPage?.close();
       void authService.signOut();
       break;
     default:
@@ -218,6 +234,7 @@ function startAutoRefresh() {
     const state = store.getState();
     if (
       !document.hidden &&
+      currentView === "Overview" &&
       state.autoRefresh &&
       state.range === "realtime" &&
       !state.loading &&
@@ -244,6 +261,7 @@ function destroyApplication() {
   window.clearInterval(autoRefreshTimer);
   window.clearTimeout(analyticsTimer);
   dashboard?.destroy();
+  listPage?.destroy();
   mqttService?.destroy();
   apiService?.destroy();
 }
@@ -267,12 +285,18 @@ async function bootstrap() {
     apiService = new ApiService();
     mqttService = new MqttService();
     dashboard = new Dashboard(store.asReadonly());
+    sensorDataService = new SensorDataService();
+    listPage = new ListPage(sensorDataService, {
+      onToast: (message, type) => dashboard.showToast(message, type)
+    });
     dashboard.setIdentity(identity.displayName || identity.username);
+    dashboard.setActiveView(currentView);
     dashboard.addEventListener("action", handleDashboardAction);
     registerServiceEvents();
     cleanupCallbacks.push(
       authService.onAuthStateChange((event) => {
         if (event === "SIGNED_OUT") {
+          listPage?.close();
           authService.redirect("sign-in.html");
         }
       })

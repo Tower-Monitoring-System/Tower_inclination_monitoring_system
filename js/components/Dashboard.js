@@ -16,6 +16,7 @@ export class Dashboard extends EventTarget {
     this.resizeTimer = null;
     this.relativeTimeTimer = null;
     this.revealTimer = null;
+    this.activeView = "Overview";
     this.chart = new TiltChart(this.document, this.window);
     this.stationCard = new StationCard(this.document);
     this.alertPanel = new AlertPanel(this.document);
@@ -31,6 +32,9 @@ export class Dashboard extends EventTarget {
     const byId = (id) => this.document.getElementById(id);
     return {
       appShell: byId("appShell"),
+      overviewPage: byId("overviewPage"),
+      listPage: byId("listPage"),
+      topbarTitle: byId("topbarTitle"),
       sidebarBackdrop: byId("sidebarBackdrop"),
       menuButton: byId("menuButton"),
       notificationButton: byId("notificationButton"),
@@ -69,7 +73,9 @@ export class Dashboard extends EventTarget {
         const target = item.dataset.navTarget;
         this.closeMobileNavigation();
         this.closeAccountMenu();
-        if (target !== "Overview") {
+        if (target === "Overview" || target === "List") {
+          this.emitAction(DASHBOARD_ACTION.NAVIGATE, { target });
+        } else {
           this.showToast(`${target} is prepared for the next integration phase.`, "info");
         }
       });
@@ -124,7 +130,9 @@ export class Dashboard extends EventTarget {
         if (this.window.innerWidth > 1100) {
           this.closeMobileNavigation();
         }
-        this.chart.draw();
+        if (this.activeView === "Overview") {
+          this.chart.draw();
+        }
       }, APP_CONFIG.resizeDebounceMs);
     });
   }
@@ -182,11 +190,13 @@ export class Dashboard extends EventTarget {
     this.renderSafely("Alert panel", () => this.alertPanel.render(state.alerts, state.summary));
     this.renderSafely("Station ranking", () => this.stationCard.render(state.ranking));
 
-    try {
-      this.chart.render(state);
-    } catch (error) {
-      this.window.console.error("The chart component failed independently.", error);
-      this.chart.showFallback("The chart could not be rendered. Monitoring summaries and ranking remain available.");
+    if (this.activeView === "Overview") {
+      try {
+        this.chart.render(state);
+      } catch (error) {
+        this.window.console.error("The chart component failed independently.", error);
+        this.chart.showFallback("The chart could not be rendered. Monitoring summaries and ranking remain available.");
+      }
     }
 
     if (this.elements.autoRefreshToggle) {
@@ -311,6 +321,43 @@ export class Dashboard extends EventTarget {
     const collapsed = this.elements.appShell.classList.toggle("sidebar-collapsed");
     this.elements.menuButton.setAttribute("aria-expanded", collapsed ? "false" : "true");
     this.window.setTimeout(() => this.chart.draw(), 240);
+  }
+
+  setActiveView(view) {
+    if (view !== "Overview" && view !== "List") {
+      return false;
+    }
+
+    this.activeView = view;
+    if (this.elements.overviewPage) {
+      this.elements.overviewPage.hidden = view !== "Overview";
+    }
+    if (this.elements.listPage) {
+      this.elements.listPage.hidden = view !== "List";
+    }
+    this.document.querySelectorAll(".sidebar-nav [data-nav-target]").forEach((item) => {
+      const active = item.dataset.navTarget === view;
+      item.classList.toggle("is-active", active);
+      if (active) {
+        item.setAttribute("aria-current", "page");
+      } else {
+        item.removeAttribute("aria-current");
+      }
+    });
+
+    const pageTitle = view === "List"
+      ? "Sensor Data List"
+      : "Tower Inclination Monitoring System";
+    if (this.elements.topbarTitle) {
+      this.elements.topbarTitle.textContent = pageTitle;
+    }
+    this.document.title = `${view === "List" ? "Sensor Data List" : "Overview"} | Tower Inclination Monitoring System`;
+    this.document.body?.setAttribute("data-active-view", view.toLowerCase());
+
+    if (view === "Overview") {
+      this.window.setTimeout(() => this.chart.render(this.state), 0);
+    }
+    return true;
   }
 
   closeMobileNavigation() {

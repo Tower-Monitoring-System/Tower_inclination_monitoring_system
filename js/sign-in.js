@@ -1,5 +1,5 @@
 import { AUTH_CONFIG } from "./core/config.js";
-import { AuthService } from "./services/authService.js?v=20260823.10";
+import { AuthService } from "./services/authService.js?v=20260823.11";
 
 let authService = null;
 

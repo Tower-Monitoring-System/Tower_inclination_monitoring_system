@@ -7,6 +7,7 @@ const DEFAULT_IDENTITY = Object.freeze({
   displayName: "Operator",
   role: "operator"
 });
+const ALLOWED_ROLES = new Set(["owner", "operator"]);
 
 export class AuthService {
   constructor(browserWindow = window) {
@@ -79,7 +80,7 @@ export class AuthService {
       throw new Error("The signed-in profile could not be loaded.", { cause: error });
     }
 
-    if (!data || data.role !== "owner") {
+    if (!data || !ALLOWED_ROLES.has(data.role)) {
       return null;
     }
 
