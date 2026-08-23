@@ -125,7 +125,12 @@ export class AuthService {
       }
     );
 
-    if (error || !data?.access_token || !data?.refresh_token) {
+    if (error) {
+      console.error("Supabase username-login failed:", error);
+      return { ok: false, reason: "service_error" };
+    }
+    if (!data?.access_token || !data?.refresh_token) {
+      console.error("Supabase login response does not contain a valid session");
       return { ok: false, reason: "invalid_credentials" };
     }
 
