@@ -14,11 +14,11 @@ const PERIOD_COPY = Object.freeze({
   }),
   month: Object.freeze({
     title: "View by month",
-    description: "Select a month to review all readings recorded in that month."
+    description: "Select a month to review all readings recorded in that month"
   }),
   year: Object.freeze({
     title: "View by year",
-    description: "Select a year to review all readings recorded in that year."
+    description: "Select a year to review all readings recorded in that year"
   })
 });
 
@@ -276,8 +276,8 @@ export class ListPage {
         const timedOut = error?.name === "TimeoutError";
         this.error = timedOut
           ? "The request timed out. The last valid readings were retained."
-          : error?.message || "The sensor-data service could not be reached.";
-        this.window.console.error("Sensor data refresh failed.", error);
+          : error?.message || "The sensor-data service could not be reached";
+        this.window.console.error("Sensor data refresh failed", error);
         if (!automatic) {
           this.onToast(this.error, "error");
         }
