@@ -131,6 +131,7 @@
     exportButton: document.getElementById("exportButton"),
     analyticsPanel: document.getElementById("analyticsPanel"),
     chart: document.getElementById("inclinationChart"),
+    chartFallback: document.getElementById("chartFallback"),
     chartTooltip: document.getElementById("chartTooltip"),
     chartLegend: document.getElementById("chartLegend"),
     chartTitle: document.getElementById("analyticsTitle"),
@@ -147,41 +148,97 @@
     toastMessage: document.getElementById("dashboardToastMessage")
   };
 
-  let chartContext = elements.chart.getContext("2d");
+  let chartContext = null;
   let chartMetrics = null;
+  let skeletonTimeoutId = null;
+  let chartResizeFrame = null;
 
   function init() {
-    state.trendData = createTrendData(state.range);
-    bindEvents();
-    renderDashboard();
-    updateUserIdentity();
+    skeletonTimeoutId = window.setTimeout(revealDashboard, 2000);
 
-    document.addEventListener("DOMContentLoaded", updateUserIdentity, { once: true });
+    try {
+      state.trendData = createTrendData(state.range);
+      renderDashboard();
+      bindEvents();
+      updateUserIdentity();
+      observeChartSize();
+      startDashboardTimers();
+    } catch (error) {
+      reportInitializationError(error);
+    } finally {
+      scheduleDashboardReveal();
+    }
+  }
 
-    window.requestAnimationFrame(function removeInitialSkeleton() {
-      window.requestAnimationFrame(function revealDashboard() {
-        document.body.classList.remove("dashboard-loading");
+  function scheduleDashboardReveal() {
+    if (typeof window.requestAnimationFrame !== "function") {
+      window.setTimeout(revealDashboard, 0);
+      return;
+    }
+
+    window.requestAnimationFrame(function waitForFirstPaint() {
+      window.requestAnimationFrame(revealDashboard);
+    });
+  }
+
+  function revealDashboard() {
+    if (skeletonTimeoutId !== null) {
+      window.clearTimeout(skeletonTimeoutId);
+      skeletonTimeoutId = null;
+    }
+
+    document.body.classList.remove("dashboard-loading");
+  }
+
+  function reportInitializationError(error) {
+    window.console.error("Dashboard initialization failed.", error);
+    showToast("Dashboard loaded with limited interactivity. Please refresh the page.", "error");
+  }
+
+  function observeChartSize() {
+    if (!("ResizeObserver" in window) || !elements.chart || !elements.chart.parentElement) {
+      return;
+    }
+
+    const chartObserver = new ResizeObserver(function queueObservedChartRedraw() {
+      if (chartResizeFrame !== null || document.hidden) {
+        return;
+      }
+
+      const requestFrame = window.requestAnimationFrame || function requestFrameFallback(callback) {
+        return window.setTimeout(callback, 16);
+      };
+
+      chartResizeFrame = requestFrame(function redrawObservedChart() {
+        chartResizeFrame = null;
+        drawChart();
       });
     });
 
-    if ("ResizeObserver" in window) {
-      const chartObserver = new ResizeObserver(function redrawObservedChart() {
-        drawChart();
-      });
-      chartObserver.observe(elements.chart.parentElement);
-    }
+    chartObserver.observe(elements.chart.parentElement);
+  }
 
+  function startDashboardTimers() {
     window.setInterval(updateRelativeTime, 15000);
     window.setInterval(function runAutoRefresh() {
-      if (state.autoRefresh && state.range === "realtime" && !state.loading) {
+      if (!document.hidden && state.autoRefresh && state.range === "realtime" && !state.loading) {
         refreshDashboard({ automatic: true });
       }
     }, 8000);
   }
 
+  function listen(element, eventName, listener, options) {
+    if (!element) {
+      return false;
+    }
+
+    element.addEventListener(eventName, listener, options);
+    return true;
+  }
+
   function bindEvents() {
-    elements.menuButton.addEventListener("click", toggleNavigation);
-    elements.sidebarBackdrop.addEventListener("click", closeMobileNavigation);
+    listen(elements.menuButton, "click", toggleNavigation);
+    listen(elements.sidebarBackdrop, "click", closeMobileNavigation);
 
     document.querySelectorAll("[data-nav-target]").forEach(function bindNavigationItem(item) {
       item.addEventListener("click", function handleNavigationSelection() {
@@ -195,7 +252,7 @@
       });
     });
 
-    elements.notificationButton.addEventListener("click", function showNotifications() {
+    listen(elements.notificationButton, "click", function showNotifications() {
       const statuses = getStatusCounts();
       showToast(
         `${statuses.alert} alert and ${statuses.warning} warning towers need review.`,
@@ -203,7 +260,7 @@
       );
     });
 
-    elements.accountButton.addEventListener("click", toggleAccountMenu);
+    listen(elements.accountButton, "click", toggleAccountMenu);
 
     document.addEventListener("click", function closeFloatingMenus(event) {
       if (!event.target.closest(".account-menu-wrap")) {
@@ -218,11 +275,11 @@
       }
     });
 
-    elements.refreshButton.addEventListener("click", function handleManualRefresh() {
+    listen(elements.refreshButton, "click", function handleManualRefresh() {
       refreshDashboard({ automatic: false });
     });
 
-    elements.exportButton.addEventListener("click", exportTowerData);
+    listen(elements.exportButton, "click", exportTowerData);
 
     document.querySelectorAll("[data-range]").forEach(function bindRangeButton(button) {
       button.addEventListener("click", function selectRange() {
@@ -236,20 +293,22 @@
       });
     });
 
-    elements.dateRangeButton.addEventListener("click", function selectCustomRange() {
+    listen(elements.dateRangeButton, "click", function selectCustomRange() {
       setRange("custom");
       showToast("Showing a prepared 14-day custom monitoring window.", "info");
     });
 
-    elements.autoRefreshToggle.addEventListener("change", function updateAutoRefresh(event) {
+    listen(elements.autoRefreshToggle, "change", function updateAutoRefresh(event) {
       state.autoRefresh = event.target.checked;
       showToast(`Auto-refresh ${state.autoRefresh ? "enabled" : "paused"}.`, "info");
     });
 
-    elements.chart.addEventListener("pointermove", handleChartPointerMove);
-    elements.chart.addEventListener("pointerleave", clearChartHover);
-    elements.chart.addEventListener("keydown", handleChartKeyboard);
-    elements.chart.setAttribute("tabindex", "0");
+    listen(elements.chart, "pointermove", handleChartPointerMove);
+    listen(elements.chart, "pointerleave", clearChartHover);
+    listen(elements.chart, "keydown", handleChartKeyboard);
+    if (elements.chart) {
+      elements.chart.setAttribute("tabindex", "0");
+    }
 
     window.addEventListener("resize", function handleWindowResize() {
       window.clearTimeout(state.resizeTimer);
@@ -590,21 +649,60 @@
   }
 
   function drawChart() {
-    const rect = elements.chart.getBoundingClientRect();
-    const width = Math.max(1, rect.width);
-    const height = Math.max(1, rect.height);
-    const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
+    if (!elements.chart) {
+      return;
+    }
 
-    elements.chart.width = Math.max(1, Math.floor(width * pixelRatio));
-    elements.chart.height = Math.max(1, Math.floor(height * pixelRatio));
-    chartContext = elements.chart.getContext("2d");
-    chartContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-    chartContext.clearRect(0, 0, width, height);
+    try {
+      const rect = elements.chart.getBoundingClientRect();
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      const pixelRatio = Math.min(2, window.devicePixelRatio || 1);
 
-    if (state.chartMode === "distribution") {
-      drawDistributionChart(width, height);
-    } else {
-      drawTrendChart(width, height);
+      elements.chart.width = Math.max(1, Math.floor(width * pixelRatio));
+      elements.chart.height = Math.max(1, Math.floor(height * pixelRatio));
+      chartContext = elements.chart.getContext("2d");
+
+      if (!chartContext) {
+        showChartFallback("Chart rendering is unavailable in this browser. Monitoring data remains available below.");
+        return;
+      }
+
+      hideChartFallback();
+      chartContext.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+      chartContext.clearRect(0, 0, width, height);
+
+      if (state.chartMode === "distribution") {
+        drawDistributionChart(width, height);
+      } else {
+        drawTrendChart(width, height);
+      }
+    } catch (error) {
+      chartContext = null;
+      chartMetrics = null;
+      window.console.error("Dashboard chart rendering failed.", error);
+      showChartFallback("The chart could not be rendered. Monitoring data remains available in the summary and ranking table.");
+    }
+  }
+
+  function showChartFallback(message) {
+    if (elements.chart) {
+      elements.chart.style.visibility = "hidden";
+    }
+
+    if (elements.chartFallback) {
+      elements.chartFallback.textContent = message;
+      elements.chartFallback.hidden = false;
+    }
+  }
+
+  function hideChartFallback() {
+    if (elements.chart) {
+      elements.chart.style.removeProperty("visibility");
+    }
+
+    if (elements.chartFallback) {
+      elements.chartFallback.hidden = true;
     }
   }
 

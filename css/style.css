@@ -1319,6 +1319,26 @@ svg {
   outline: none;
 }
 
+.chart-fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 28px;
+  border: 1px dashed #ccd8e6;
+  border-radius: 12px;
+  color: #64748b;
+  background: #f8fafc;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
+.chart-fallback[hidden] {
+  display: none;
+}
+
 .chart-tooltip {
   position: absolute;
   z-index: 4;

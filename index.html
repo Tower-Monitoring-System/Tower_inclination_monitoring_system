@@ -7,7 +7,7 @@
   <meta name="theme-color" content="#082d57" />
   <title>Dashboard | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./css/style.css" />
+  <link rel="stylesheet" href="./css/style.css?v=20260823.1" />
   <script src="./js/auth-config.js"></script>
   <script src="./js/auth.js"></script>
 </head>
@@ -186,7 +186,6 @@
       <main class="dashboard-content" id="dashboardContent" tabindex="-1">
         <section class="page-intro" aria-labelledby="pageTitle">
           <div>
-            <p class="eyebrow"><span aria-hidden="true"></span> Live monitoring</p>
             <h1 id="pageTitle">System overview</h1>
             <p>Track tower inclination, sensor health, and structural alerts in real time.</p>
           </div>
@@ -319,6 +318,9 @@
                 >
                   Tower inclination trend chart.
                 </canvas>
+                <p class="chart-fallback" id="chartFallback" role="status" hidden>
+                  Chart rendering is temporarily unavailable. Monitoring data remains available in the summary and ranking table.
+                </p>
                 <div class="chart-tooltip" id="chartTooltip" role="status" aria-live="polite"></div>
               </div>
               <div class="chart-legend" id="chartLegend" aria-label="Chart legend"></div>
@@ -382,6 +384,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script src="./js/app.js"></script>
+  <script src="./js/app.js?v=20260823.1"></script>
 </body>
 </html>
