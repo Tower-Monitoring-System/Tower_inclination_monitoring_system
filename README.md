@@ -21,7 +21,8 @@ Tower_inclination_monitoring_system/
 │   ├── components.css
 │   ├── sign-in.css
 │   ├── list.css
-│   └── alerts.css
+│   ├── alerts.css
+│   └── towers.css
 │
 ├── js/
 │   ├── app.js
@@ -50,11 +51,13 @@ Tower_inclination_monitoring_system/
 │   │   ├── warningProcessor.js
 │   │   ├── stationProcessor.js
 │   │   ├── sensorDataProcessor.js
-│   │   └── alertProcessor.js
+│   │   ├── alertProcessor.js
+│   │   └── towerMonitoringProcessor.js
 │   │
 │   ├── pages/
 │   │   ├── listPage.js
-│   │   └── alertsPage.js
+│   │   ├── alertsPage.js
+│   │   └── towersPage.js
 │   │
 │   ├── utils/
 │   │   └── xlsxExporter.js
@@ -62,6 +65,8 @@ Tower_inclination_monitoring_system/
 │   └── components/
 │       ├── Dashboard.js
 │       ├── TiltChart.js
+│       ├── TowerTrendChart.js
+│       ├── TowerVectorChart.js
 │       ├── StationCard.js
 │       └── AlertPanel.js
 │
@@ -98,3 +103,9 @@ See `SENSOR_DATA_SETUP.md` for the complete Google Sheets, Apps Script, and Supa
 The Alerts page derives battery and tower-inclination events from the same authenticated sensor-data feed. Consecutive readings that violate the same rule remain one event; a safe reading resolves that event, and a later violation starts a new event. No sample alert records are embedded in the frontend.
 
 Thresholds are centralized in `js/core/constants.js` under `ALERT_THRESHOLDS`. The polling interval, page size, history limit, and fallback tower ID are in `js/core/config.js` under `ALERT_CONFIG`. Change `sourceTowerId` when the Google Sheet represents a different tower.
+
+## Tower Monitoring
+
+The Towers page consumes the dashboard's validated `stations` and `sensorData` state, so it works with the existing mock adapter and automatically supports the configured REST/MQTT sources. It provides tower selection, Day/Month/Custom filtering, current X/Y/Z/resultant metrics, an interactive X/Y trend, and a 3-axis orientation view.
+
+`TOWERS_CONFIG.maximumHistoryPointsPerTower` in `js/core/config.js` controls the bounded in-memory history retained for each tower. `SensorData` accepts an optional `tiltZ`; existing two-axis payloads remain compatible and default Z to `0`.

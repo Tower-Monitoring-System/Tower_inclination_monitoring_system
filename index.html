@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="./css/dashboard.css?v=20260823.13" />
   <link rel="stylesheet" href="./css/list.css?v=20260823.2" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.1" />
+  <link rel="stylesheet" href="./css/towers.css?v=20260824.1" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -100,7 +101,7 @@
           <svg aria-hidden="true"><use href="#icon-grid"></use></svg>
           <span>Overview</span>
         </button>
-        <button class="nav-item" type="button" data-nav-target="Tower registry">
+        <button class="nav-item" type="button" data-nav-target="Towers">
           <svg aria-hidden="true"><use href="#icon-tower"></use></svg>
           <span>Towers</span>
           <small id="sidebarTowerCount">8</small>
@@ -390,6 +391,161 @@
         </div>
 
         <section
+          class="page-view towers-page"
+          id="towersPage"
+          data-page-view="Towers"
+          aria-labelledby="towersPageTitle"
+          hidden
+        >
+          <h1 class="sr-only" id="towersPageTitle">Tower Monitoring</h1>
+
+          <div class="tower-error-banner" id="towerErrorBanner" role="alert" hidden>
+            <span aria-hidden="true">!</span>
+            <p><strong>Some tower data is unavailable</strong><small id="towerErrorMessage">The last valid readings are retained.</small></p>
+          </div>
+
+          <div class="tower-empty-state" id="towerEmptyState" hidden>
+            <span aria-hidden="true"><svg><use href="#icon-tower"></use></svg></span>
+            <strong id="towerEmptyTitle">No towers available</strong>
+            <p id="towerEmptyDescription">Connect a station data source, then refresh the dashboard to begin monitoring.</p>
+          </div>
+
+          <div id="towerMonitoringContent">
+            <section class="tower-summary-grid" aria-label="Selected tower summary">
+              <article class="tower-summary-card selected-tower-card">
+                <p>Selected Tower</p>
+                <div class="selected-tower-content">
+                  <span class="selected-tower-icon" aria-hidden="true"><svg><use href="#icon-tower"></use></svg></span>
+                  <div>
+                    <strong id="towerSelectedName">No tower selected</strong>
+                    <span><b id="towerSelectedId">—</b> · <span id="towerSelectedLocation">No location available</span></span>
+                    <small class="tower-status-badge offline" id="towerSelectedStatus">Offline</small>
+                  </div>
+                </div>
+              </article>
+
+              <article class="tower-summary-card axis-x" id="towerXCard">
+                <p>Current X Tilt</p>
+                <strong id="towerCurrentX">—</strong>
+                <span>Tilt (degrees)</span>
+                <i class="tower-metric-icon" aria-hidden="true">X</i>
+              </article>
+
+              <article class="tower-summary-card axis-y" id="towerYCard">
+                <p>Current Y Tilt</p>
+                <strong id="towerCurrentY">—</strong>
+                <span>Tilt (degrees)</span>
+                <i class="tower-metric-icon" aria-hidden="true">Y</i>
+              </article>
+
+              <article class="tower-summary-card axis-z" id="towerZCard">
+                <p>Current Z Tilt</p>
+                <strong id="towerCurrentZ">—</strong>
+                <span>Tilt (degrees)</span>
+                <i class="tower-metric-icon" aria-hidden="true">Z</i>
+              </article>
+
+              <article class="tower-summary-card resultant" id="towerResultantCard">
+                <p>Resultant Tilt</p>
+                <strong id="towerResultant">—</strong>
+                <span>Total (degrees)</span>
+                <i class="tower-metric-icon" aria-hidden="true">◎</i>
+              </article>
+            </section>
+
+            <section class="tower-filter-panel" aria-label="Tower monitoring filters">
+              <label class="tower-select-control" for="towerSelect">
+                <span>Select Tower</span>
+                <span class="tower-select-wrap">
+                  <svg aria-hidden="true"><use href="#icon-tower"></use></svg>
+                  <select id="towerSelect" aria-label="Select tower"></select>
+                </span>
+              </label>
+
+              <div class="tower-range-control">
+                <span>Date Range</span>
+                <div class="tower-range-picker">
+                  <svg aria-hidden="true"><use href="#icon-calendar"></use></svg>
+                  <strong id="towerRangeSummary">Not selected</strong>
+                  <label class="sr-only" for="towerDayPicker">Select monitoring day</label>
+                  <input id="towerDayPicker" type="date" />
+                  <label class="sr-only" for="towerMonthPicker">Select monitoring month</label>
+                  <input id="towerMonthPicker" type="month" hidden />
+                  <div class="tower-custom-pickers" id="towerCustomPickers" hidden>
+                    <label><span>From</span><input id="towerCustomStart" type="date" /></label>
+                    <label><span>To</span><input id="towerCustomEnd" type="date" /></label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="tower-period-tabs" role="group" aria-label="Tower trend period">
+                <button class="is-active" type="button" data-tower-period="day" aria-pressed="true">Day</button>
+                <button type="button" data-tower-period="month" aria-pressed="false">Month</button>
+                <button type="button" data-tower-period="custom" aria-pressed="false">Custom</button>
+              </div>
+
+              <button class="secondary-button tower-refresh-button" id="towerRefreshButton" type="button">
+                <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+                <span>Refresh</span>
+              </button>
+            </section>
+
+            <section class="tower-charts-grid" aria-label="Tower inclination visualizations">
+              <article class="tower-chart-card trend-card" aria-labelledby="towerTrendTitle">
+                <header class="tower-chart-header">
+                  <div>
+                    <p class="panel-kicker">Historical movement</p>
+                    <h2 id="towerTrendTitle">Tilt Trend by Axis (X &amp; Y)</h2>
+                    <span>Tilt in degrees (°)</span>
+                  </div>
+                  <div class="tower-trend-meta">
+                    <span id="towerTrendCount">0 readings</span>
+                    <span class="tower-chart-legend"><i class="x"></i>X Tilt (°)<i class="y"></i>Y Tilt (°)</span>
+                  </div>
+                </header>
+                <div class="tower-canvas-wrap tower-trend-wrap">
+                  <canvas id="towerTrendCanvas" aria-label="Line chart showing X and Y tower tilt over time"></canvas>
+                  <div class="chart-tooltip tower-trend-tooltip" id="towerTrendTooltip" role="status"></div>
+                  <p class="tower-chart-fallback" id="towerTrendFallback" hidden></p>
+                  <div class="tower-chart-loading" id="towerTrendLoading" aria-hidden="true" hidden><span></span><p>Updating trend…</p></div>
+                </div>
+              </article>
+
+              <article class="tower-chart-card vector-card" aria-labelledby="towerVectorTitle">
+                <header class="tower-chart-header">
+                  <div>
+                    <p class="panel-kicker">Current orientation</p>
+                    <h2 id="towerVectorTitle">3-Axis Movement (X, Y, Z)</h2>
+                    <span id="towerLastReading">No sensor reading received yet</span>
+                  </div>
+                  <span class="tower-chart-legend axis-legend"><i class="x"></i>X<i class="y"></i>Y<i class="z"></i>Z</span>
+                </header>
+                <div class="tower-vector-layout">
+                  <dl class="tower-axis-values">
+                    <div class="x"><dt>X (°)</dt><dd id="towerVectorX">—</dd></div>
+                    <div class="y"><dt>Y (°)</dt><dd id="towerVectorY">—</dd></div>
+                    <div class="z"><dt>Z (°)</dt><dd id="towerVectorZ">—</dd></div>
+                    <div class="total"><dt>Resultant</dt><dd id="towerVectorResultant">—</dd></div>
+                  </dl>
+                  <div class="tower-canvas-wrap tower-vector-wrap">
+                    <canvas id="towerVectorCanvas" aria-label="Three-axis visualization of the selected tower orientation"></canvas>
+                    <p class="tower-chart-fallback" id="towerVectorFallback" hidden></p>
+                    <div class="tower-chart-loading" id="towerVectorLoading" aria-hidden="true" hidden><span></span><p>Updating orientation…</p></div>
+                  </div>
+                  <dl class="tower-orientation-summary">
+                    <div><dt>Direction</dt><dd id="towerDirection">No direction</dd></div>
+                    <div><dt>Tilt Angle</dt><dd id="towerAngle">—</dd></div>
+                    <small><i></i>Solid vector: current position<br /><b></b>Dashed line: ideal vertical</small>
+                  </dl>
+                </div>
+              </article>
+            </section>
+          </div>
+
+          <p class="sr-only" id="towerLiveStatus" role="status" aria-live="polite"></p>
+        </section>
+
+        <section
           class="page-view list-page"
           id="listPage"
           data-page-view="List"
@@ -584,6 +740,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.3"></script>
+  <script type="module" src="./js/app.js?v=20260824.4"></script>
 </body>
 </html>

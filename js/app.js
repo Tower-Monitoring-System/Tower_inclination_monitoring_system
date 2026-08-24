@@ -11,6 +11,7 @@ import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
 import { AlertsPage } from "./pages/alertsPage.js?v=20260824.1";
 import { ListPage } from "./pages/listPage.js?v=20260824.1";
+import { TowersPage } from "./pages/towersPage.js?v=20260824.1";
 import { AlertService } from "./services/alertService.js?v=20260824.1";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
@@ -45,6 +46,7 @@ let authService;
 let listPage;
 let sensorDataService;
 let alertsPage;
+let towersPage;
 let refreshPromise = null;
 let autoRefreshTimer = null;
 let analyticsTimer = null;
@@ -177,6 +179,11 @@ function handleDashboardAction(event) {
         } else {
           listPage.close();
         }
+        if (currentView === "Towers") {
+          towersPage.open();
+        } else {
+          towersPage.close();
+        }
         if (currentView === "Alerts") {
           alertsPage.open();
         } else {
@@ -200,6 +207,7 @@ function handleDashboardAction(event) {
       break;
     case DASHBOARD_ACTION.SIGN_OUT:
       listPage?.close();
+      towersPage?.close();
       alertsPage?.close();
       void authService.signOut();
       break;
@@ -271,6 +279,7 @@ function destroyApplication() {
   window.clearTimeout(analyticsTimer);
   dashboard?.destroy();
   listPage?.destroy();
+  towersPage?.destroy();
   alertsPage?.destroy();
   mqttService?.destroy();
   apiService?.destroy();
@@ -304,6 +313,10 @@ async function bootstrap() {
     alertsPage = new AlertsPage(alertService, {
       onToast: (message, type) => dashboard.showToast(message, type)
     });
+    towersPage = new TowersPage(store.asReadonly(), {
+      onRefresh: () => refreshDashboard({ automatic: false }),
+      onToast: (message, type) => dashboard.showToast(message, type)
+    });
     dashboard.setIdentity(identity.displayName || identity.username);
     dashboard.setActiveView(currentView);
     dashboard.addEventListener("action", handleDashboardAction);
@@ -312,6 +325,7 @@ async function bootstrap() {
       authService.onAuthStateChange((event) => {
         if (event === "SIGNED_OUT") {
           listPage?.close();
+          towersPage?.close();
           alertsPage?.close();
           authService.redirect("sign-in.html");
         }

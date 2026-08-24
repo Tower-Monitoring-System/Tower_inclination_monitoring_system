@@ -49,7 +49,7 @@ function enrichStations(stations, sensorData, invalidPackets) {
         } else {
           nextData = {
             ...nextData,
-            maxTilt: calculateTilt(sensor.tiltX, sensor.tiltY),
+            maxTilt: calculateTilt(sensor.tiltX, sensor.tiltY, sensor.tiltZ),
             rssi: sensor.rssi,
             battery: sensor.battery
           };
@@ -164,4 +164,3 @@ export function processSensorPacket(rawPacket, currentState, timestamp = Date.no
     { range: currentState.range, timestamp }
   );
 }
-

@@ -10,15 +10,16 @@ export function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
-export function calculateTilt(tiltX, tiltY) {
+export function calculateTilt(tiltX, tiltY, tiltZ = 0) {
   const x = Number(tiltX);
   const y = Number(tiltY);
+  const z = Number(tiltZ);
 
-  if (!Number.isFinite(x) || !Number.isFinite(y)) {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
     throw new TypeError("Tilt axes must be finite numbers.");
   }
 
-  return Math.hypot(x, y);
+  return Math.hypot(x, y, z);
 }
 
 export function normalizeTilt(value, minimum = 0, maximum = 90) {
@@ -36,7 +37,7 @@ export function isSensorReadingAnomalous(sensorData) {
     return true;
   }
 
-  const magnitude = calculateTilt(sensorData.tiltX, sensorData.tiltY);
+  const magnitude = calculateTilt(sensorData.tiltX, sensorData.tiltY, sensorData.tiltZ);
   return magnitude > 90 || sensorData.temperature < -80 || sensorData.temperature > 150;
 }
 
@@ -122,4 +123,3 @@ export function createDistributionData(stations) {
 
   return categories;
 }
-

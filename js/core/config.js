@@ -47,3 +47,7 @@ export const ALERT_CONFIG = Object.freeze({
   pollingIntervalMs: SENSOR_DATA_CONFIG.pollingIntervalMs,
   maximumAlerts: 5000
 });
+
+export const TOWERS_CONFIG = Object.freeze({
+  maximumHistoryPointsPerTower: 1440
+});

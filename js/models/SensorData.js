@@ -35,6 +35,9 @@ export class SensorData {
     this.stationId = requiredString(rawSensorData.stationId, "Sensor station id");
     this.tiltX = finiteNumber(rawSensorData.tiltX, "Sensor tilt X", -90, 90);
     this.tiltY = finiteNumber(rawSensorData.tiltY, "Sensor tilt Y", -90, 90);
+    this.tiltZ = rawSensorData.tiltZ === undefined || rawSensorData.tiltZ === null
+      ? 0
+      : finiteNumber(rawSensorData.tiltZ, "Sensor tilt Z", -90, 90);
     this.temperature = finiteNumber(rawSensorData.temperature, "Sensor temperature", -100, 200);
     this.rssi = Math.round(finiteNumber(rawSensorData.rssi, "Sensor RSSI", -200, 50));
     this.battery = Math.round(finiteNumber(rawSensorData.battery, "Sensor battery", 0, 100));
@@ -52,6 +55,7 @@ export class SensorData {
       stationId: this.stationId,
       tiltX: this.tiltX,
       tiltY: this.tiltY,
+      tiltZ: this.tiltZ,
       temperature: this.temperature,
       rssi: this.rssi,
       battery: this.battery,
@@ -59,4 +63,3 @@ export class SensorData {
     };
   }
 }
-
