@@ -11,8 +11,8 @@
   <link rel="stylesheet" href="./css/components.css?v=20260824.14" />
   <link rel="stylesheet" href="./css/dashboard.css?v=20260824.14" />
   <link rel="stylesheet" href="./css/list.css?v=20260824.4" />
-  <link rel="stylesheet" href="./css/alerts.css?v=20260824.1" />
-  <link rel="stylesheet" href="./css/towers.css?v=20260824.1" />
+  <link rel="stylesheet" href="./css/alerts.css?v=20260824.2" />
+  <link rel="stylesheet" href="./css/towers.css?v=20260824.2" />
   <link rel="stylesheet" href="./css/settings.css?v=20260824.1" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
@@ -270,11 +270,16 @@
                 </span>
               </label>
 
+              <div class="tower-period-tabs" role="group" aria-label="Tower trend period">
+                <button class="is-active" type="button" data-tower-period="day" aria-pressed="true">Day</button>
+                <button type="button" data-tower-period="month" aria-pressed="false">Month</button>
+                <button type="button" data-tower-period="custom" aria-pressed="false">Custom</button>
+              </div>
+
               <div class="tower-range-control">
                 <span>Date Range</span>
-                <div class="tower-range-picker">
+                <div class="tower-range-picker" id="towerRangePicker" aria-label="Selected tower monitoring period">
                   <svg aria-hidden="true"><use href="#icon-calendar"></use></svg>
-                  <strong id="towerRangeSummary">Not selected</strong>
                   <label class="sr-only" for="towerDayPicker">Select monitoring day</label>
                   <input id="towerDayPicker" type="date" />
                   <label class="sr-only" for="towerMonthPicker">Select monitoring month</label>
@@ -284,12 +289,6 @@
                     <label><span>To</span><input id="towerCustomEnd" type="date" /></label>
                   </div>
                 </div>
-              </div>
-
-              <div class="tower-period-tabs" role="group" aria-label="Tower trend period">
-                <button class="is-active" type="button" data-tower-period="day" aria-pressed="true">Day</button>
-                <button type="button" data-tower-period="month" aria-pressed="false">Month</button>
-                <button type="button" data-tower-period="custom" aria-pressed="false">Custom</button>
               </div>
 
               <button class="secondary-button tower-refresh-button" id="towerRefreshButton" type="button">
@@ -306,7 +305,6 @@
                     <span>Tilt in degrees (°)</span>
                   </div>
                   <div class="tower-trend-meta">
-                    <span id="towerTrendCount">0 readings</span>
                     <span class="tower-chart-legend"><i class="x"></i>X Tilt (°)<i class="y"></i>Y Tilt (°)</span>
                   </div>
                 </header>
@@ -746,6 +744,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.7"></script>
+  <script type="module" src="./js/app.js?v=20260824.8"></script>
 </body>
 </html>

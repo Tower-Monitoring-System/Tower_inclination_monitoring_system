@@ -1,5 +1,5 @@
-import { TowerTrendChart } from "../components/TowerTrendChart.js";
-import { TowerVectorChart } from "../components/TowerVectorChart.js";
+import { TowerTrendChart } from "../components/TowerTrendChart.js?v=20260824.2";
+import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260824.2";
 import { TOWERS_CONFIG } from "../core/config.js";
 import {
   createTowerViewModel,
@@ -17,12 +17,6 @@ const STATUS_LABELS = Object.freeze({
   offline: "Offline"
 });
 
-const DATE_LABEL = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "2-digit",
-  year: "numeric"
-});
-
 const READING_TIME = new Intl.DateTimeFormat("en-US", {
   month: "short",
   day: "2-digit",
@@ -32,16 +26,6 @@ const READING_TIME = new Intl.DateTimeFormat("en-US", {
   second: "2-digit",
   hourCycle: "h23"
 });
-
-function parseLocalDate(value) {
-  const [year, month, day] = String(value).split("-").map(Number);
-  return new Date(year, month - 1, day);
-}
-
-function formatRangeDate(value) {
-  const date = parseLocalDate(value);
-  return Number.isNaN(date.getTime()) ? "Not selected" : DATE_LABEL.format(date);
-}
 
 export class TowersPage {
   constructor(readonlyStore, options = {}) {
@@ -90,7 +74,7 @@ export class TowersPage {
       yCard: byId("towerYCard"),
       zCard: byId("towerZCard"),
       resultantCard: byId("towerResultantCard"),
-      rangeSummary: byId("towerRangeSummary"),
+      rangePicker: byId("towerRangePicker"),
       dayPicker: byId("towerDayPicker"),
       monthPicker: byId("towerMonthPicker"),
       customPickers: byId("towerCustomPickers"),
@@ -103,7 +87,6 @@ export class TowersPage {
       emptyTitle: byId("towerEmptyTitle"),
       emptyDescription: byId("towerEmptyDescription"),
       content: byId("towerMonitoringContent"),
-      trendCount: byId("towerTrendCount"),
       trendLoading: byId("towerTrendLoading"),
       vectorLoading: byId("towerVectorLoading"),
       vectorX: byId("towerVectorX"),
@@ -305,13 +288,11 @@ export class TowersPage {
     const viewModel = createTowerViewModel(station, readings);
     this.renderMetrics(viewModel);
     this.renderVectorValues(viewModel);
-    this.elements.trendCount.textContent = `${filteredReadings.length} ${filteredReadings.length === 1 ? "reading" : "readings"}`;
-
     const loading = Boolean(this.state.loading || this.refreshing);
     this.elements.refreshButton.disabled = loading || stations.length === 0;
     this.elements.refreshButton.classList.toggle("is-loading", loading);
-    this.elements.trendLoading.hidden = !loading;
-    this.elements.vectorLoading.hidden = !loading;
+    this.elements.trendLoading.hidden = !loading || filteredReadings.length > 0;
+    this.elements.vectorLoading.hidden = !loading || Boolean(viewModel?.latest);
 
     if (this.active) {
       this.trendChart.render(filteredReadings);
@@ -337,25 +318,17 @@ export class TowersPage {
     this.elements.monthPicker.value = this.month;
     this.elements.customStart.value = this.customStart;
     this.elements.customEnd.value = this.customEnd;
+    this.elements.customStart.max = this.customEnd;
+    this.elements.customEnd.min = this.customStart;
     this.elements.dayPicker.hidden = this.period !== "day";
     this.elements.monthPicker.hidden = this.period !== "month";
     this.elements.customPickers.hidden = this.period !== "custom";
+    this.elements.rangePicker.classList.toggle("is-custom", this.period === "custom");
     this.document.querySelectorAll("[data-tower-period]").forEach((button) => {
       const active = button.dataset.towerPeriod === this.period;
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    if (this.period === "month") {
-      const [year, month] = this.month.split("-").map(Number);
-      this.elements.rangeSummary.textContent = new Date(year, month - 1, 1).toLocaleDateString("en-US", {
-        month: "long",
-        year: "numeric"
-      });
-    } else if (this.period === "custom") {
-      this.elements.rangeSummary.textContent = `${formatRangeDate(this.customStart)} – ${formatRangeDate(this.customEnd)}`;
-    } else {
-      this.elements.rangeSummary.textContent = formatRangeDate(this.day);
-    }
   }
 
   renderError(stationCount) {

@@ -99,6 +99,11 @@
   border-radius: 15px;
   background: #fff;
   box-shadow: var(--shadow-sm);
+  transform: translateY(0);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .alert-metric::after {
@@ -110,6 +115,8 @@
   border-radius: 50%;
   background: rgba(31, 115, 237, 0.04);
   content: "";
+  opacity: 0.75;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .alert-metric-icon {
@@ -120,6 +127,48 @@
   border-radius: 13px;
   color: var(--primary);
   background: var(--primary-soft);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .alert-metric:hover {
+    transform: translateY(-4px);
+    border-color: #bcd6f5;
+    box-shadow: 0 15px 34px rgba(20, 68, 126, 0.13);
+  }
+
+  .alert-metric.critical:hover {
+    border-color: #f0b7bf;
+    box-shadow: 0 15px 34px rgba(192, 35, 55, 0.12);
+  }
+
+  .alert-metric.battery:hover {
+    border-color: #efd09b;
+    box-shadow: 0 15px 34px rgba(190, 112, 0, 0.12);
+  }
+
+  .alert-metric.inclination:hover {
+    border-color: #d6c0f4;
+    box-shadow: 0 15px 34px rgba(104, 55, 177, 0.12);
+  }
+
+  .alert-metric:hover::after {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+
+  .alert-metric:hover .alert-metric-icon {
+    transform: scale(1.07) rotate(-3deg);
+    box-shadow: 0 8px 18px rgba(35, 83, 140, 0.1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .alert-metric,
+  .alert-metric::after,
+  .alert-metric-icon {
+    transition: none;
+  }
 }
 
 .alert-metric-icon svg {

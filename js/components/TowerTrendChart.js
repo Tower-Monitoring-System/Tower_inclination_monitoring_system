@@ -29,6 +29,18 @@ function roundedRange(readings) {
     : { minimum: rangeMinimum, maximum: rangeMaximum };
 }
 
+function readingsSignature(readings) {
+  let hash = 2166136261;
+  readings.forEach((reading) => {
+    const value = `${reading.timestamp}|${reading.x}|${reading.y};`;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+  });
+  return `${readings.length}:${hash >>> 0}`;
+}
+
 export class TowerTrendChart {
   constructor(documentRef = document, browserWindow = window) {
     this.document = documentRef;
@@ -40,7 +52,8 @@ export class TowerTrendChart {
     this.readings = [];
     this.metrics = null;
     this.hoverIndex = null;
-    this.resizeFrame = null;
+    this.renderSignature = "";
+    this.drawFrame = null;
     this.resizeObserver = null;
     this.abortController = new AbortController();
 
@@ -64,22 +77,32 @@ export class TowerTrendChart {
       return;
     }
     this.resizeObserver = new this.window.ResizeObserver(() => {
-      if (this.resizeFrame !== null || this.document.hidden) {
-        return;
-      }
-      this.resizeFrame = this.window.requestAnimationFrame(() => {
-        this.resizeFrame = null;
-        this.draw();
-      });
+      this.requestDraw();
     });
     this.resizeObserver.observe(this.canvas.parentElement);
   }
 
   render(readings) {
-    this.readings = Array.isArray(readings) ? readings : [];
+    const nextReadings = Array.isArray(readings) ? readings : [];
+    const nextSignature = readingsSignature(nextReadings);
+    if (nextSignature === this.renderSignature) {
+      return;
+    }
+    this.readings = nextReadings;
+    this.renderSignature = nextSignature;
     this.hoverIndex = null;
     this.hideTooltip();
-    this.draw();
+    this.requestDraw();
+  }
+
+  requestDraw() {
+    if (this.drawFrame !== null || this.document.hidden) {
+      return;
+    }
+    this.drawFrame = this.window.requestAnimationFrame(() => {
+      this.drawFrame = null;
+      this.draw();
+    });
   }
 
   draw() {
@@ -97,8 +120,12 @@ export class TowerTrendChart {
         return;
       }
       const ratio = Math.min(CHART_CONSTANTS.maximumPixelRatio, this.window.devicePixelRatio || 1);
-      this.canvas.width = Math.floor(rect.width * ratio);
-      this.canvas.height = Math.floor(rect.height * ratio);
+      const canvasWidth = Math.floor(rect.width * ratio);
+      const canvasHeight = Math.floor(rect.height * ratio);
+      if (this.canvas.width !== canvasWidth || this.canvas.height !== canvasHeight) {
+        this.canvas.width = canvasWidth;
+        this.canvas.height = canvasHeight;
+      }
       this.context = this.canvas.getContext("2d");
       if (!this.context) {
         this.showFallback("Trend rendering is unavailable in this browser.");
@@ -299,8 +326,8 @@ export class TowerTrendChart {
   destroy() {
     this.abortController.abort();
     this.resizeObserver?.disconnect();
-    if (this.resizeFrame !== null) {
-      this.window.cancelAnimationFrame(this.resizeFrame);
+    if (this.drawFrame !== null) {
+      this.window.cancelAnimationFrame(this.drawFrame);
     }
   }
 }

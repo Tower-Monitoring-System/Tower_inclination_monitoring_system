@@ -8,6 +8,13 @@ const COLORS = Object.freeze({
   grid: "#e8edf4"
 });
 
+function viewModelSignature(viewModel) {
+  const latest = viewModel?.latest;
+  return latest
+    ? `${latest.timestamp}|${latest.x}|${latest.y}|${latest.z}|${viewModel.resultant}|${viewModel.status}`
+    : "empty";
+}
+
 export class TowerVectorChart {
   constructor(documentRef = document, browserWindow = window) {
     this.document = documentRef;
@@ -15,7 +22,8 @@ export class TowerVectorChart {
     this.canvas = documentRef.getElementById("towerVectorCanvas");
     this.fallback = documentRef.getElementById("towerVectorFallback");
     this.viewModel = null;
-    this.resizeFrame = null;
+    this.renderSignature = "";
+    this.drawFrame = null;
     this.resizeObserver = null;
     this.observeSize();
   }
@@ -25,20 +33,29 @@ export class TowerVectorChart {
       return;
     }
     this.resizeObserver = new this.window.ResizeObserver(() => {
-      if (this.resizeFrame !== null || this.document.hidden) {
-        return;
-      }
-      this.resizeFrame = this.window.requestAnimationFrame(() => {
-        this.resizeFrame = null;
-        this.draw();
-      });
+      this.requestDraw();
     });
     this.resizeObserver.observe(this.canvas.parentElement);
   }
 
   render(viewModel) {
+    const nextSignature = viewModelSignature(viewModel);
+    if (nextSignature === this.renderSignature) {
+      return;
+    }
     this.viewModel = viewModel;
-    this.draw();
+    this.renderSignature = nextSignature;
+    this.requestDraw();
+  }
+
+  requestDraw() {
+    if (this.drawFrame !== null || this.document.hidden) {
+      return;
+    }
+    this.drawFrame = this.window.requestAnimationFrame(() => {
+      this.drawFrame = null;
+      this.draw();
+    });
   }
 
   draw() {
@@ -56,8 +73,12 @@ export class TowerVectorChart {
         return;
       }
       const ratio = Math.min(CHART_CONSTANTS.maximumPixelRatio, this.window.devicePixelRatio || 1);
-      this.canvas.width = Math.floor(rect.width * ratio);
-      this.canvas.height = Math.floor(rect.height * ratio);
+      const canvasWidth = Math.floor(rect.width * ratio);
+      const canvasHeight = Math.floor(rect.height * ratio);
+      if (this.canvas.width !== canvasWidth || this.canvas.height !== canvasHeight) {
+        this.canvas.width = canvasWidth;
+        this.canvas.height = canvasHeight;
+      }
       const context = this.canvas.getContext("2d");
       if (!context) {
         this.showFallback("3-axis rendering is unavailable in this browser.");
@@ -240,8 +261,8 @@ export class TowerVectorChart {
 
   destroy() {
     this.resizeObserver?.disconnect();
-    if (this.resizeFrame !== null) {
-      this.window.cancelAnimationFrame(this.resizeFrame);
+    if (this.drawFrame !== null) {
+      this.window.cancelAnimationFrame(this.drawFrame);
     }
   }
 }

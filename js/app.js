@@ -9,7 +9,7 @@ import { processDashboardPayload, processSensorPacket } from "./logic/stationPro
 import { AlertsPage } from "./pages/alertsPage.js?v=20260824.2";
 import { ListPage } from "./pages/listPage.js?v=20260824.2";
 import { SettingsPage } from "./pages/settingsPage.js?v=20260824.1";
-import { TowersPage } from "./pages/towersPage.js?v=20260824.1";
+import { TowersPage } from "./pages/towersPage.js?v=20260824.2";
 import { AlertService } from "./services/alertService.js?v=20260824.2";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
