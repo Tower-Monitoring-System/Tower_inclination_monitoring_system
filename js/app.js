@@ -1,5 +1,5 @@
 import { Dashboard } from "./components/Dashboard.js?v=20260824.4";
-import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js";
+import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js?v=20260824.2";
 import {
   CONNECTION_STATUS,
   DASHBOARD_ACTION
@@ -9,7 +9,7 @@ import { processDashboardPayload, processSensorPacket } from "./logic/stationPro
 import { AlertsPage } from "./pages/alertsPage.js?v=20260824.2";
 import { ListPage } from "./pages/listPage.js?v=20260824.2";
 import { SettingsPage } from "./pages/settingsPage.js?v=20260824.1";
-import { TowersPage } from "./pages/towersPage.js?v=20260824.2";
+import { TowersPage } from "./pages/towersPage.js?v=20260824.3";
 import { AlertService } from "./services/alertService.js?v=20260824.2";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
@@ -17,6 +17,7 @@ import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
 import { SensorDataService } from "./services/sensorDataService.js?v=20260823.1";
 import { SettingsService } from "./services/settingsService.js?v=20260824.1";
+import { TowerHistoryService } from "./services/towerHistoryService.js?v=20260824.1";
 
 const initialState = {
   stations: [],
@@ -272,7 +273,8 @@ async function bootstrap() {
     });
     towersPage = new TowersPage(store.asReadonly(), {
       onRefresh: () => refreshDashboard({ automatic: false }),
-      onToast: (message, type) => dashboard.showToast(message, type)
+      onToast: (message, type) => dashboard.showToast(message, type),
+      historyService: new TowerHistoryService(new SensorDataService())
     });
     settingsPage = new SettingsPage(settingsService, {
       onToast: (message, type) => dashboard.showToast(message, type),

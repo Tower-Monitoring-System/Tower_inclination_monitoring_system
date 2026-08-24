@@ -129,12 +129,6 @@
   transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
 }
 
-.tower-summary-card:hover {
-  border-color: #d2deeb;
-  box-shadow: var(--shadow-md);
-  transform: translateY(-2px);
-}
-
 .tower-summary-card::after {
   position: absolute;
   top: -38px;
@@ -144,6 +138,8 @@
   border-radius: 50%;
   background: rgba(31, 115, 237, 0.035);
   content: "";
+  opacity: 0.75;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .tower-summary-card > p {
@@ -196,6 +192,7 @@
   border-radius: 50%;
   color: var(--primary);
   background: linear-gradient(145deg, #eaf3ff, #d7e9ff);
+  transition: box-shadow 180ms ease, transform 180ms ease;
 }
 
 .selected-tower-icon svg {
@@ -295,6 +292,7 @@
   font-size: 0.76rem;
   font-style: normal;
   font-weight: 900;
+  transition: box-shadow 180ms ease, transform 180ms ease;
 }
 
 .axis-y .tower-metric-icon {
@@ -320,6 +318,55 @@
 
 .tower-summary-card.is-alert > strong {
   color: var(--danger);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tower-summary-card:hover {
+    border-color: #bcd6f5;
+    box-shadow: 0 15px 34px rgba(20, 68, 126, 0.13);
+    transform: translateY(-4px);
+  }
+
+  .tower-summary-card.axis-y:hover {
+    border-color: #b9dfc6;
+    box-shadow: 0 15px 34px rgba(20, 131, 59, 0.11);
+  }
+
+  .tower-summary-card.axis-z:hover,
+  .tower-summary-card.resultant:hover {
+    border-color: #d6c0f4;
+    box-shadow: 0 15px 34px rgba(104, 55, 177, 0.12);
+  }
+
+  .tower-summary-card.is-warning:hover {
+    border-color: #efd09b;
+    box-shadow: 0 15px 34px rgba(190, 112, 0, 0.12);
+  }
+
+  .tower-summary-card.is-alert:hover {
+    border-color: #f0b7bf;
+    box-shadow: 0 15px 34px rgba(192, 35, 55, 0.12);
+  }
+
+  .tower-summary-card:hover::after {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+
+  .tower-summary-card:hover .selected-tower-icon,
+  .tower-summary-card:hover .tower-metric-icon {
+    box-shadow: 0 8px 18px rgba(35, 83, 140, 0.1);
+    transform: scale(1.07) rotate(-3deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tower-summary-card,
+  .tower-summary-card::after,
+  .selected-tower-icon,
+  .tower-metric-icon {
+    transition: none;
+  }
 }
 
 .tower-filter-panel {

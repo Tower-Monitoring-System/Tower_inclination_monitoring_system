@@ -1,6 +1,6 @@
-import { TowerTrendChart } from "../components/TowerTrendChart.js?v=20260824.2";
-import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260824.2";
-import { TOWERS_CONFIG } from "../core/config.js";
+import { TowerTrendChart } from "../components/TowerTrendChart.js?v=20260824.3";
+import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260824.3";
+import { TOWERS_CONFIG } from "../core/config.js?v=20260824.2";
 import {
   createTowerViewModel,
   filterTowerReadings,
@@ -8,7 +8,7 @@ import {
   mergeTowerReadings,
   normalizeTowerReading,
   shiftLocalDate
-} from "../logic/towerMonitoringProcessor.js";
+} from "../logic/towerMonitoringProcessor.js?v=20260824.2";
 
 const STATUS_LABELS = Object.freeze({
   normal: "Stable",
@@ -35,6 +35,7 @@ export class TowersPage {
     this.window = options.windowRef || window;
     this.onRefresh = typeof options.onRefresh === "function" ? options.onRefresh : async () => {};
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
+    this.historyService = options.historyService || null;
     this.abortController = new AbortController();
     this.state = readonlyStore.getState();
     this.historyByTower = new Map();
@@ -46,6 +47,11 @@ export class TowersPage {
     this.customEnd = this.day;
     this.filterTouched = false;
     this.invalidReadingCount = 0;
+    this.historicalInvalidReadingCount = 0;
+    this.historyLoaded = false;
+    this.historyLoading = false;
+    this.historyError = null;
+    this.historyRefreshPromise = null;
     this.active = false;
     this.refreshing = false;
     this.refreshPromise = null;
@@ -230,7 +236,10 @@ export class TowersPage {
     this.render();
     this.refreshPromise = (async () => {
       try {
-        await this.onRefresh();
+        await Promise.all([
+          this.onRefresh(),
+          this.refreshHistoricalReadings({ rethrow: true })
+        ]);
         this.announce("Tower monitoring data refreshed.");
       } catch (error) {
         this.window.console.error("Towers refresh failed.", error);
@@ -242,6 +251,74 @@ export class TowersPage {
       }
     })();
     return this.refreshPromise;
+  }
+
+  refreshHistoricalReadings({ automatic = false, rethrow = false } = {}) {
+    if (!this.historyService) {
+      return Promise.resolve(null);
+    }
+    if (this.historyRefreshPromise) {
+      return this.historyRefreshPromise;
+    }
+
+    this.historyLoading = true;
+    this.historyError = null;
+    this.render();
+    this.historyRefreshPromise = (async () => {
+      try {
+        const result = await this.historyService.fetchReadings();
+        const readings = Array.isArray(result.readings) ? result.readings : [];
+        this.historicalInvalidReadingCount = result.invalidRows?.length || 0;
+        this.mergeHistoricalReadings(readings);
+        this.historyLoaded = true;
+        this.followLatestDate();
+        return result;
+      } catch (error) {
+        if (error?.name === "AbortError") {
+          return null;
+        }
+        this.historyError = error?.message || "Historical tower data could not be loaded.";
+        this.window.console.error("Tower history refresh failed.", error);
+        if (!automatic && !rethrow) {
+          this.onToast("Historical tower data could not be refreshed.", "error");
+        }
+        if (rethrow) {
+          throw error;
+        }
+        return null;
+      } finally {
+        this.historyLoading = false;
+        this.historyRefreshPromise = null;
+        this.render();
+      }
+    })();
+    return this.historyRefreshPromise;
+  }
+
+  mergeHistoricalReadings(readings) {
+    const groupedReadings = new Map();
+    readings.forEach((packet) => {
+      try {
+        const reading = normalizeTowerReading(packet);
+        const towerReadings = groupedReadings.get(reading.stationId) || [];
+        towerReadings.push(reading);
+        groupedReadings.set(reading.stationId, towerReadings);
+      } catch (error) {
+        this.historicalInvalidReadingCount += 1;
+        this.window.console.warn("An invalid historical Towers reading was ignored.", error);
+      }
+    });
+
+    groupedReadings.forEach((towerReadings, towerId) => {
+      this.historyByTower.set(
+        towerId,
+        mergeTowerReadings(
+          this.historyByTower.get(towerId) || [],
+          towerReadings,
+          this.config.maximumHistoryPointsPerTower
+        )
+      );
+    });
   }
 
   currentStation() {
@@ -265,6 +342,9 @@ export class TowersPage {
   open() {
     this.active = true;
     this.render();
+    if (this.historyService && !this.historyLoaded && !this.historyRefreshPromise) {
+      void this.refreshHistoricalReadings({ automatic: true });
+    }
     this.window.setTimeout(() => {
       if (this.active) {
         this.trendChart.draw();
@@ -275,6 +355,7 @@ export class TowersPage {
 
   close() {
     this.active = false;
+    this.historyService?.cancelActiveRequest();
   }
 
   render() {
@@ -283,20 +364,19 @@ export class TowersPage {
     this.renderFilters();
     this.renderError(stations.length);
     const station = this.currentStation();
-    const readings = this.currentReadings();
     const filteredReadings = this.filteredReadings();
-    const viewModel = createTowerViewModel(station, readings);
+    const viewModel = createTowerViewModel(station, filteredReadings, { fallbackToStation: false });
     this.renderMetrics(viewModel);
     this.renderVectorValues(viewModel);
-    const loading = Boolean(this.state.loading || this.refreshing);
+    const loading = Boolean(this.state.loading || this.refreshing || this.historyLoading);
     this.elements.refreshButton.disabled = loading || stations.length === 0;
     this.elements.refreshButton.classList.toggle("is-loading", loading);
     this.elements.trendLoading.hidden = !loading || filteredReadings.length > 0;
     this.elements.vectorLoading.hidden = !loading || Boolean(viewModel?.latest);
 
     if (this.active) {
-      this.trendChart.render(filteredReadings);
-      this.vectorChart.render(viewModel);
+      this.trendChart.render(filteredReadings, { period: this.period });
+      this.vectorChart.render(viewModel, { period: this.period });
     }
   }
 
@@ -333,7 +413,10 @@ export class TowersPage {
 
   renderError(stationCount) {
     const message = this.state.error
-      || (this.invalidReadingCount ? `${this.invalidReadingCount} invalid sensor reading(s) were ignored.` : "");
+      || this.historyError
+      || (this.invalidReadingCount + this.historicalInvalidReadingCount
+        ? `${this.invalidReadingCount + this.historicalInvalidReadingCount} invalid sensor reading(s) were ignored.`
+        : "");
     this.elements.errorBanner.hidden = !message;
     if (message) {
       this.elements.errorMessage.textContent = message;
@@ -360,7 +443,7 @@ export class TowersPage {
     this.elements.xValue.textContent = latest ? `${latest.x.toFixed(2)}°` : "—";
     this.elements.yValue.textContent = latest ? `${latest.y.toFixed(2)}°` : "—";
     this.elements.zValue.textContent = latest ? `${latest.z.toFixed(2)}°` : "—";
-    this.elements.resultantValue.textContent = viewModel ? `${viewModel.resultant.toFixed(2)}°` : "—";
+    this.elements.resultantValue.textContent = latest ? `${viewModel.resultant.toFixed(2)}°` : "—";
     this.setMetricSeverity(this.elements.xCard, latest ? Math.abs(latest.x) : 0);
     this.setMetricSeverity(this.elements.yCard, latest ? Math.abs(latest.y) : 0);
     this.setMetricSeverity(this.elements.zCard, latest ? Math.abs(latest.z) : 0);
@@ -377,9 +460,9 @@ export class TowersPage {
     this.elements.vectorX.textContent = latest ? `${latest.x.toFixed(2)}°` : "—";
     this.elements.vectorY.textContent = latest ? `${latest.y.toFixed(2)}°` : "—";
     this.elements.vectorZ.textContent = latest ? `${latest.z.toFixed(2)}°` : "—";
-    this.elements.vectorResultant.textContent = viewModel ? `${viewModel.resultant.toFixed(2)}°` : "—";
+    this.elements.vectorResultant.textContent = latest ? `${viewModel.resultant.toFixed(2)}°` : "—";
     this.elements.direction.textContent = viewModel?.direction || "No direction";
-    this.elements.angle.textContent = viewModel ? `${viewModel.resultant.toFixed(2)}°` : "—";
+    this.elements.angle.textContent = latest ? `${viewModel.resultant.toFixed(2)}°` : "—";
     this.elements.lastReading.textContent = latest?.timestamp
       ? `Last reading ${READING_TIME.format(new Date(latest.timestamp))}`
       : "No sensor reading received yet";
@@ -400,5 +483,6 @@ export class TowersPage {
     this.unsubscribe?.();
     this.trendChart.destroy();
     this.vectorChart.destroy();
+    this.historyService?.destroy();
   }
 }

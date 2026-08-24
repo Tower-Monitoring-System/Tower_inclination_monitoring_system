@@ -38,13 +38,18 @@ export class TowerVectorChart {
     this.resizeObserver.observe(this.canvas.parentElement);
   }
 
-  render(viewModel) {
-    const nextSignature = viewModelSignature(viewModel);
+  render(viewModel, options = {}) {
+    const period = ["day", "month", "custom"].includes(options.period) ? options.period : "day";
+    const nextSignature = `${period}|${viewModelSignature(viewModel)}`;
     if (nextSignature === this.renderSignature) {
       return;
     }
     this.viewModel = viewModel;
     this.renderSignature = nextSignature;
+    this.canvas?.setAttribute(
+      "aria-label",
+      `Three-axis orientation for the selected ${period} period`
+    );
     this.requestDraw();
   }
 

@@ -131,18 +131,21 @@ export function getTowerSeverity(resultant, online = true) {
   return STATION_STATUS.NORMAL;
 }
 
-export function createTowerViewModel(station, readings) {
+export function createTowerViewModel(station, readings, options = {}) {
   if (!station) {
     return null;
   }
   const safeReadings = Array.isArray(readings) ? readings : [];
-  const latest = safeReadings.at(-1) || Object.freeze({
-    stationId: station.id,
-    x: Number(station.maxTilt) || 0,
-    y: 0,
-    z: 0,
-    timestamp: 0
-  });
+  const fallbackReading = options.fallbackToStation === false
+    ? null
+    : Object.freeze({
+        stationId: station.id,
+        x: Number(station.maxTilt) || 0,
+        y: 0,
+        z: 0,
+        timestamp: 0
+      });
+  const latest = safeReadings.at(-1) || fallbackReading;
   const resultant = calculateResultantTilt(latest);
 
   return Object.freeze({

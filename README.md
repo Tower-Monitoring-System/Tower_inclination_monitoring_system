@@ -49,7 +49,8 @@ Tower_inclination_monitoring_system/
 │   │   ├── alertService.js
 │   │   ├── settingsRepository.js
 │   │   ├── settingsService.js
-│   │   └── esp32SettingsAdapter.js
+│   │   ├── esp32SettingsAdapter.js
+│   │   └── towerHistoryService.js
 │   │
 │   ├── logic/
 │   │   ├── tiltProcessor.js
@@ -117,6 +118,6 @@ The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, th
 
 ## Tower Monitoring
 
-The Towers page consumes the dashboard's validated `stations` and `sensorData` state, so it works with the existing mock adapter and automatically supports the configured REST/MQTT sources. It provides tower selection, Day/Month/Custom filtering, current X/Y/Z/resultant metrics, an interactive X/Y trend, and a 3-axis orientation view.
+The Towers page combines the dashboard's validated realtime state with the historical sensor-data service used by List and Alerts. Day/Month/Custom filtering is applied once and shared by the current X/Y/Z/resultant metrics, the interactive X/Y trend, and the 3-axis orientation view.
 
-`TOWERS_CONFIG.maximumHistoryPointsPerTower` in `js/core/config.js` controls the bounded in-memory history retained for each tower. `SensorData` accepts an optional `tiltZ`; existing two-axis payloads remain compatible and default Z to `0`.
+`TOWERS_CONFIG.sourceTowerId` maps the current single-tower Google Sheet to a station, while `maximumHistoryPointsPerTower` bounds the retained history. `SensorData` accepts an optional `tiltZ`; existing two-axis payloads remain compatible and default Z to `0`.

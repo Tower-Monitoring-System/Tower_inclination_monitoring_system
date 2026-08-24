@@ -15,6 +15,17 @@ const TOOLTIP_TIME = new Intl.DateTimeFormat("en-US", {
   hourCycle: "h23"
 });
 
+const AXIS_TIME = new Intl.DateTimeFormat("en-US", {
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
+const AXIS_DATE = new Intl.DateTimeFormat("en-US", {
+  month: "2-digit",
+  day: "2-digit"
+});
+
 function roundedRange(readings) {
   const values = readings.flatMap((reading) => [reading.x, reading.y, 0]);
   const minimum = Math.min(...values);
@@ -50,6 +61,7 @@ export class TowerTrendChart {
     this.fallback = documentRef.getElementById("towerTrendFallback");
     this.context = null;
     this.readings = [];
+    this.period = "day";
     this.metrics = null;
     this.hoverIndex = null;
     this.renderSignature = "";
@@ -82,14 +94,20 @@ export class TowerTrendChart {
     this.resizeObserver.observe(this.canvas.parentElement);
   }
 
-  render(readings) {
+  render(readings, options = {}) {
     const nextReadings = Array.isArray(readings) ? readings : [];
-    const nextSignature = readingsSignature(nextReadings);
+    const nextPeriod = ["day", "month", "custom"].includes(options.period) ? options.period : "day";
+    const nextSignature = `${nextPeriod}|${readingsSignature(nextReadings)}`;
     if (nextSignature === this.renderSignature) {
       return;
     }
     this.readings = nextReadings;
+    this.period = nextPeriod;
     this.renderSignature = nextSignature;
+    this.canvas?.setAttribute(
+      "aria-label",
+      `Line chart showing X and Y tower tilt for the selected ${nextPeriod} period`
+    );
     this.hoverIndex = null;
     this.hideTooltip();
     this.requestDraw();
@@ -177,7 +195,7 @@ export class TowerTrendChart {
       const reading = this.readings[readingIndex];
       const x = xAt(readingIndex);
       const date = new Date(reading.timestamp);
-      const label = date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", hour12: false });
+      const label = this.period === "day" ? AXIS_TIME.format(date) : AXIS_DATE.format(date);
       context.fillStyle = "#728198";
       context.textAlign = index === 0 ? "left" : index === labelCount - 1 ? "right" : "center";
       context.fillText(label, x, height - 16);
