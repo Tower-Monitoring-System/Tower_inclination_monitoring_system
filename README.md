@@ -22,7 +22,8 @@ Tower_inclination_monitoring_system/
 │   ├── sign-in.css
 │   ├── list.css
 │   ├── alerts.css
-│   └── towers.css
+│   ├── towers.css
+│   └── settings.css
 │
 ├── js/
 │   ├── app.js
@@ -32,7 +33,8 @@ Tower_inclination_monitoring_system/
 │   │   ├── store.js
 │   │   ├── config.js
 │   │   ├── supabaseConfig.js
-│   │   └── constants.js
+│   │   ├── constants.js
+│   │   └── settingsDefaults.js
 │   │
 │   ├── models/
 │   │   ├── Station.js
@@ -44,7 +46,10 @@ Tower_inclination_monitoring_system/
 │   │   ├── mqttService.js
 │   │   ├── authService.js
 │   │   ├── sensorDataService.js
-│   │   └── alertService.js
+│   │   ├── alertService.js
+│   │   ├── settingsRepository.js
+│   │   ├── settingsService.js
+│   │   └── esp32SettingsAdapter.js
 │   │
 │   ├── logic/
 │   │   ├── tiltProcessor.js
@@ -52,12 +57,14 @@ Tower_inclination_monitoring_system/
 │   │   ├── stationProcessor.js
 │   │   ├── sensorDataProcessor.js
 │   │   ├── alertProcessor.js
+│   │   ├── settingsValidation.js
 │   │   └── towerMonitoringProcessor.js
 │   │
 │   ├── pages/
 │   │   ├── listPage.js
 │   │   ├── alertsPage.js
-│   │   └── towersPage.js
+│   │   ├── towersPage.js
+│   │   └── settingsPage.js
 │   │
 │   ├── utils/
 │   │   └── xlsxExporter.js
@@ -94,7 +101,7 @@ See `SUPABASE_SETUP.md` for setup and deployment instructions.
 
 ## Sensor Data List
 
-The List page reads validated Google Sheets data through an authenticated Supabase Edge Function. It supports Day/Month filtering, Date/Time sorting, pagination, resilient polling, battery warnings, and native `.xlsx` export.
+The List page reads validated Google Sheets data through an authenticated Supabase Edge Function. It supports Day/Month/Custom date-range filtering, Date/Time sorting, pagination, resilient polling, battery warnings, and native `.xlsx` export.
 
 See `SENSOR_DATA_SETUP.md` for the complete Google Sheets, Apps Script, and Supabase deployment guide.
 
@@ -102,7 +109,11 @@ See `SENSOR_DATA_SETUP.md` for the complete Google Sheets, Apps Script, and Supa
 
 The Alerts page derives battery and tower-inclination events from the same authenticated sensor-data feed. Consecutive readings that violate the same rule remain one event; a safe reading resolves that event, and a later violation starts a new event. No sample alert records are embedded in the frontend.
 
-Thresholds are centralized in `js/core/constants.js` under `ALERT_THRESHOLDS`. The polling interval, page size, history limit, and fallback tower ID are in `js/core/config.js` under `ALERT_CONFIG`. Change `sourceTowerId` when the Google Sheet represents a different tower.
+Applied battery and per-axis inclination thresholds come from the shared System Settings service. The polling interval, page size, history limit, and fallback tower ID are in `js/core/config.js` under `ALERT_CONFIG`. Change `sourceTowerId` when the Google Sheet represents a different tower.
+
+## System Settings
+
+The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, the battery warning threshold, and ESP32 Wi-Fi/AP settings. Validation, persistence, and device communication are separated into dedicated modules so the mock ESP32 adapter can be replaced by a production transport without changing the UI. Wi-Fi and AP passwords are never written to browser storage.
 
 ## Tower Monitoring
 

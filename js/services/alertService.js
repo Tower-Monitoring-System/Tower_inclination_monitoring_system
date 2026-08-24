@@ -2,19 +2,21 @@ import { ALERT_CONFIG } from "../core/config.js";
 import { createAlertsFromReadings, summarizeAlerts } from "../logic/alertProcessor.js";
 
 export class AlertService {
-  constructor(sensorDataService, config = ALERT_CONFIG) {
+  constructor(sensorDataService, options = {}) {
     if (!sensorDataService || typeof sensorDataService.fetchReadings !== "function") {
       throw new TypeError("AlertService requires a SensorDataService instance.");
     }
     this.sensorDataService = sensorDataService;
-    this.config = config;
+    this.config = options.sourceTowerId ? options : options.config || ALERT_CONFIG;
+    this.settingsService = options.settingsService || null;
   }
 
   async fetchAlerts() {
     const result = await this.sensorDataService.fetchReadings();
     const alerts = createAlertsFromReadings(result.readings, {
       defaultTowerId: this.config.sourceTowerId,
-      maximumAlerts: this.config.maximumAlerts
+      maximumAlerts: this.config.maximumAlerts,
+      configuration: this.settingsService?.getAlertConfiguration()
     });
     return Object.freeze({
       alerts,

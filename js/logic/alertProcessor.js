@@ -1,9 +1,9 @@
 import {
   ALERT_SEVERITY,
   ALERT_STATUS,
-  ALERT_THRESHOLDS,
   ALERT_TYPE
 } from "../core/constants.js";
+import { createAlertConfiguration } from "../core/settingsDefaults.js";
 
 const VALID_TYPES = new Set(["all", ...Object.values(ALERT_TYPE)]);
 const VALID_SEVERITIES = new Set(["all", ...Object.values(ALERT_SEVERITY)]);
@@ -36,16 +36,6 @@ function batterySeverity(voltage, thresholds) {
   return null;
 }
 
-function inclinationSeverity(inclination, thresholds) {
-  if (inclination >= thresholds.critical) {
-    return ALERT_SEVERITY.CRITICAL;
-  }
-  if (inclination >= thresholds.warning) {
-    return ALERT_SEVERITY.WARNING;
-  }
-  return null;
-}
-
 export function calculateInclinationDegrees(reading) {
   const x = Number(reading?.x);
   const y = Number(reading?.y);
@@ -61,13 +51,56 @@ export function calculateInclinationDegrees(reading) {
   return Math.atan2(horizontalMagnitude, Math.abs(y)) * (180 / Math.PI);
 }
 
-function alertMessage(type, severity, measurement, threshold) {
+export function calculateTiltComponents(reading, calibration = {}) {
+  const x = Number(reading?.x);
+  const y = Number(reading?.y);
+  const z = Number(reading?.z);
+  if (![x, y, z].every(Number.isFinite)) {
+    throw new TypeError("Tilt components require finite X, Y, and Z values.");
+  }
+
+  const normalizedY = Math.abs(y) > 45 ? 90 - Math.abs(y) : y;
+  return Object.freeze({
+    x: Math.abs(x - (Number(calibration.x) || 0)),
+    y: Math.abs(normalizedY - (Number(calibration.y) || 0)),
+    z: Math.abs(z - (Number(calibration.z) || 0))
+  });
+}
+
+function inclinationMeasurement(reading, thresholds, calibration) {
+  const components = calculateTiltComponents(reading, calibration);
+  const criticalMultiplier = Number(thresholds.criticalMultiplier) || 1.5;
+  const ranked = ["x", "y", "z"]
+    .map((axis) => {
+      const threshold = Number(thresholds[axis]);
+      return {
+        axis,
+        value: components[axis],
+        threshold,
+        ratio: threshold > 0 ? components[axis] / threshold : 0
+      };
+    })
+    .sort((left, right) => right.ratio - left.ratio);
+  const highest = ranked[0];
+  return Object.freeze({
+    axis: highest.axis,
+    value: highest.value,
+    threshold: highest.threshold,
+    severity: highest.ratio >= criticalMultiplier
+      ? ALERT_SEVERITY.CRITICAL
+      : highest.ratio >= 1
+        ? ALERT_SEVERITY.WARNING
+        : null
+  });
+}
+
+function alertMessage(type, severity, measurement, threshold, axis) {
   if (type === ALERT_TYPE.BATTERY) {
     const level = severity === ALERT_SEVERITY.CRITICAL ? "critically low" : "low";
     return `Battery voltage is ${level} at ${measurement.toFixed(2)} V (threshold ${threshold.toFixed(2)} V).`;
   }
   const level = severity === ALERT_SEVERITY.CRITICAL ? "critical" : "warning";
-  return `Tower inclination reached ${level} level at ${measurement.toFixed(2)}° (threshold ${threshold.toFixed(2)}°).`;
+  return `${String(axis || "").toUpperCase()}-axis inclination reached ${level} level at ${measurement.toFixed(2)}° (threshold ${threshold.toFixed(2)}°).`;
 }
 
 function resolvedMessage(type, measurement) {
@@ -76,12 +109,12 @@ function resolvedMessage(type, measurement) {
     : `Tower inclination returned to ${measurement.toFixed(2)}° within the safe range.`;
 }
 
-function createAlert({ towerId, type, reading, severity, measurement, threshold }) {
+function createAlert({ towerId, type, reading, severity, measurement, threshold, axis }) {
   return {
     id: createAlertId(towerId, type, reading.timestamp),
     towerId,
     type,
-    message: alertMessage(type, severity, measurement, threshold),
+    message: alertMessage(type, severity, measurement, threshold, axis),
     timestamp: reading.timestamp,
     updatedAt: reading.timestamp,
     resolvedAt: null,
@@ -89,16 +122,18 @@ function createAlert({ towerId, type, reading, severity, measurement, threshold 
     peakSeverity: severity,
     status: ALERT_STATUS.ACTIVE,
     measurement,
-    threshold
+    threshold,
+    axis: axis || null
   };
 }
 
-function updateOpenAlert(alert, reading, severity, measurement, threshold) {
+function updateOpenAlert(alert, reading, severity, measurement, threshold, axis) {
   alert.updatedAt = reading.timestamp;
   alert.severity = severity;
-  alert.message = alertMessage(alert.type, severity, measurement, threshold);
+  alert.message = alertMessage(alert.type, severity, measurement, threshold, axis);
   alert.measurement = measurement;
   alert.threshold = threshold;
+  alert.axis = axis || null;
   if (severityRank(severity) > severityRank(alert.peakSeverity)) {
     alert.peakSeverity = severity;
   }
@@ -127,7 +162,7 @@ export function createAlertsFromReadings(readings, options = {}) {
     throw new TypeError("Alert processing requires an array of sensor readings.");
   }
 
-  const thresholds = options.thresholds || ALERT_THRESHOLDS;
+  const configuration = options.configuration || options.thresholds || createAlertConfiguration();
   const defaultTowerId = typeof options.defaultTowerId === "string" && options.defaultTowerId.trim()
     ? options.defaultTowerId.trim()
     : "Sensor tower";
@@ -141,34 +176,38 @@ export function createAlertsFromReadings(readings, options = {}) {
     const towerId = typeof reading.towerId === "string" && reading.towerId.trim()
       ? reading.towerId.trim()
       : defaultTowerId;
-    const inclination = calculateInclinationDegrees(reading);
+    const inclination = inclinationMeasurement(
+      reading,
+      configuration.inclination,
+      configuration.calibration
+    );
     const measurements = [
       {
         type: ALERT_TYPE.BATTERY,
         value: reading.battery,
-        severity: batterySeverity(reading.battery, thresholds.battery),
-        threshold: reading.battery < thresholds.battery.critical
-          ? thresholds.battery.critical
-          : thresholds.battery.warning
+        severity: batterySeverity(reading.battery, configuration.battery),
+        threshold: reading.battery < configuration.battery.critical
+          ? configuration.battery.critical
+          : configuration.battery.warning,
+        axis: null
       },
       {
         type: ALERT_TYPE.INCLINATION,
-        value: inclination,
-        severity: inclinationSeverity(inclination, thresholds.inclination),
-        threshold: inclination >= thresholds.inclination.critical
-          ? thresholds.inclination.critical
-          : thresholds.inclination.warning
+        value: inclination.value,
+        severity: inclination.severity,
+        threshold: inclination.threshold,
+        axis: inclination.axis
       }
     ];
 
-    measurements.forEach(({ type, value, severity, threshold }) => {
+    measurements.forEach(({ type, value, severity, threshold, axis }) => {
       const eventKey = `${towerId}|${type}`;
       const openAlert = openAlerts.get(eventKey);
       if (severity) {
         if (openAlert) {
-          updateOpenAlert(openAlert, reading, severity, value, threshold);
+          updateOpenAlert(openAlert, reading, severity, value, threshold, axis);
         } else {
-          const alert = createAlert({ towerId, type, reading, severity, measurement: value, threshold });
+          const alert = createAlert({ towerId, type, reading, severity, measurement: value, threshold, axis });
           alerts.push(alert);
           openAlerts.set(eventKey, alert);
         }

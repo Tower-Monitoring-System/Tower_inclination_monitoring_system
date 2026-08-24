@@ -4,14 +4,6 @@ export const WARNING_THRESHOLDS = Object.freeze({
   alert: 1.0
 });
 
-export const ALERT_THRESHOLDS = Object.freeze({
-  battery: Object.freeze({ warning: 3.7, critical: 3.3 }),
-  inclination: Object.freeze({
-    warning: WARNING_THRESHOLDS.warning,
-    critical: WARNING_THRESHOLDS.alert
-  })
-});
-
 export const ALERT_TYPE = Object.freeze({
   BATTERY: "battery",
   INCLINATION: "inclination"
@@ -81,7 +73,8 @@ export const CHART_CONSTANTS = Object.freeze({
 
 export const STORAGE_KEYS = Object.freeze({
   session: "tower-monitor.auth-session",
-  rememberedUsername: "tower-monitor.remembered-username"
+  rememberedUsername: "tower-monitor.remembered-username",
+  systemSettings: "tower-monitor.system-settings.v1"
 });
 
 export const DASHBOARD_ACTION = Object.freeze({

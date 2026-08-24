@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="./css/list.css?v=20260824.4" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.1" />
   <link rel="stylesheet" href="./css/towers.css?v=20260824.1" />
+  <link rel="stylesheet" href="./css/settings.css?v=20260824.1" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -82,6 +83,13 @@
     </symbol>
     <symbol id="icon-download" viewBox="0 0 24 24">
       <path d="M12 3v12m-4-4 4 4 4-4M5 21h14"></path>
+    </symbol>
+    <symbol id="icon-eye" viewBox="0 0 24 24">
+      <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path>
+      <circle cx="12" cy="12" r="2.5"></circle>
+    </symbol>
+    <symbol id="icon-trash" viewBox="0 0 24 24">
+      <path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"></path>
     </symbol>
   </svg>
 
@@ -533,6 +541,205 @@
 
           <p class="sr-only" id="alertsLiveStatus" role="status" aria-live="polite"></p>
         </section>
+
+        <section
+          class="page-view settings-page"
+          id="settingsPage"
+          data-page-view="System settings"
+          aria-labelledby="settingsPageTitle"
+          hidden
+        >
+          <h1 class="sr-only" id="settingsPageTitle">System Settings</h1>
+          <form class="settings-layout" id="systemSettingsForm" novalidate>
+            <article class="settings-card settings-calibration-card">
+              <header class="settings-card-header">
+                <div>
+                  <h2>MPU6050 Calibration</h2>
+                  <p>Set initial reference values and safety limits for tower tilt measurements.</p>
+                </div>
+                <span class="settings-card-icon" aria-hidden="true"><svg><use href="#icon-settings"></use></svg></span>
+              </header>
+
+              <section class="settings-section" aria-labelledby="settingsInitialReferenceTitle">
+                <div class="settings-section-heading">
+                  <h3 id="settingsInitialReferenceTitle">Initial Reference (°)</h3>
+                  <p>These values are used as the reference for all tilt measurements.</p>
+                </div>
+                <div class="settings-axis-grid">
+                  <label class="settings-field">
+                    <span>Initial X Tilt (°)</span>
+                    <input type="number" step="0.01" data-setting-group="calibration" data-setting-path="calibration.x" />
+                    <small data-settings-error="calibration.x" hidden></small>
+                  </label>
+                  <label class="settings-field">
+                    <span>Initial Y Tilt (°)</span>
+                    <input type="number" step="0.01" data-setting-group="calibration" data-setting-path="calibration.y" />
+                    <small data-settings-error="calibration.y" hidden></small>
+                  </label>
+                  <label class="settings-field">
+                    <span>Initial Z Tilt (°)</span>
+                    <input type="number" step="0.01" data-setting-group="calibration" data-setting-path="calibration.z" />
+                    <small data-settings-error="calibration.z" hidden></small>
+                  </label>
+                </div>
+                <p class="settings-current-values" id="settingsCurrentValues">Read the live sensor before applying a new calibration reference.</p>
+              </section>
+
+              <section class="settings-section settings-threshold-section" aria-labelledby="settingsTiltThresholdTitle">
+                <div class="settings-section-heading">
+                  <h3 id="settingsTiltThresholdTitle">Tilt Thresholds (°)</h3>
+                  <p>Alerts use these shared X, Y and Z limits immediately after settings are applied.</p>
+                </div>
+                <div class="settings-axis-grid">
+                  <label class="settings-field">
+                    <span>X Tilt Threshold (°)</span>
+                    <input type="number" step="0.1" data-setting-group="tiltThresholds" data-setting-path="tiltThresholds.x" />
+                    <small data-settings-error="tiltThresholds.x" hidden></small>
+                  </label>
+                  <label class="settings-field">
+                    <span>Y Tilt Threshold (°)</span>
+                    <input type="number" step="0.1" data-setting-group="tiltThresholds" data-setting-path="tiltThresholds.y" />
+                    <small data-settings-error="tiltThresholds.y" hidden></small>
+                  </label>
+                  <label class="settings-field">
+                    <span>Z Tilt Threshold (°)</span>
+                    <input type="number" step="0.1" data-setting-group="tiltThresholds" data-setting-path="tiltThresholds.z" />
+                    <small data-settings-error="tiltThresholds.z" hidden></small>
+                  </label>
+                </div>
+              </section>
+
+              <div class="settings-calibration-actions">
+                <button class="secondary-button" id="settingsReadValues" type="button">
+                  <svg aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Read current values</span>
+                </button>
+                <button class="primary-button" id="settingsCalibrate" type="button"><span>Calibrate</span></button>
+                <button class="settings-danger-button" id="settingsReset" type="button">
+                  <svg aria-hidden="true"><use href="#icon-trash"></use></svg><span>Reset</span>
+                </button>
+              </div>
+            </article>
+
+            <div class="settings-right-column">
+              <article class="settings-card settings-battery-card">
+                <header class="settings-card-header">
+                  <div><h2>Battery Settings</h2><p>Configure the minimum battery voltage threshold shared with Alerts.</p></div>
+                  <span class="settings-card-icon battery" aria-hidden="true"><svg><use href="#icon-battery"></use></svg></span>
+                </header>
+                <label class="settings-field" for="settingsBatteryNumber"><span>Minimum Voltage Threshold (V)</span></label>
+                <div class="settings-battery-control">
+                  <input id="settingsBatteryNumber" type="number" data-setting-path="battery.minimumVoltage" />
+                  <div class="settings-range-wrap">
+                    <input id="settingsBatteryRange" type="range" data-setting-path="battery.minimumVoltage" aria-label="Minimum battery voltage threshold" />
+                    <div><span>3.3 V</span><span>8.4 V</span></div>
+                  </div>
+                </div>
+                <small class="settings-inline-error" data-settings-error="battery.minimumVoltage" hidden></small>
+                <p class="settings-help">The system creates a Battery alert when voltage falls below this applied value.</p>
+              </article>
+
+              <article class="settings-card settings-wifi-card">
+                <header class="settings-card-header">
+                  <div><h2>ESP32 Wi-Fi Settings</h2><p>Configure Internet Wi-Fi and the ESP32 local access point.</p></div>
+                  <span class="settings-card-icon wifi" aria-hidden="true"><svg><use href="#icon-signal"></use></svg></span>
+                </header>
+
+                <div class="settings-network-grid">
+                  <div class="settings-network-column">
+                    <label class="settings-field">
+                      <span>Wi-Fi SSID</span>
+                      <input type="text" autocomplete="off" maxlength="32" data-setting-path="wifi.ssid" />
+                      <small data-settings-error="wifi.ssid" hidden></small>
+                    </label>
+                    <label class="settings-field">
+                      <span>Password</span>
+                      <span class="settings-password-control">
+                        <input id="settingsWifiPassword" type="password" autocomplete="new-password" data-setting-path="wifi.password" />
+                        <button type="button" data-password-toggle="settingsWifiPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-eye"></use></svg></button>
+                      </span>
+                      <small data-settings-error="wifi.password" hidden></small>
+                    </label>
+                    <label class="settings-field">
+                      <span>IP Mode</span>
+                      <select id="settingsIpMode" data-setting-path="wifi.ipMode">
+                        <option value="dhcp">DHCP (Auto)</option>
+                        <option value="static">Static IP</option>
+                      </select>
+                      <small data-settings-error="wifi.ipMode" hidden></small>
+                    </label>
+                    <label class="settings-switch-row" for="settingsAutoReconnect">
+                      <span><strong>Auto reconnect</strong><small>Automatically reconnect if the Internet connection is lost.</small></span>
+                      <input id="settingsAutoReconnect" type="checkbox" data-setting-path="wifi.autoReconnect" />
+                      <i aria-hidden="true"></i>
+                    </label>
+                  </div>
+
+                  <div class="settings-network-column settings-static-fields" id="settingsStaticFields">
+                    <label class="settings-field">
+                      <span>Static IP</span>
+                      <input type="text" inputmode="numeric" data-setting-path="wifi.staticIp" />
+                      <small data-settings-error="wifi.staticIp" hidden></small>
+                    </label>
+                    <label class="settings-field">
+                      <span>Gateway</span>
+                      <input type="text" inputmode="numeric" data-setting-path="wifi.gateway" />
+                      <small data-settings-error="wifi.gateway" hidden></small>
+                    </label>
+                    <label class="settings-field">
+                      <span>Subnet Mask</span>
+                      <input type="text" inputmode="numeric" data-setting-path="wifi.subnetMask" />
+                      <small data-settings-error="wifi.subnetMask" hidden></small>
+                    </label>
+                    <div class="settings-connection-summary">
+                      <span>Internet status</span><strong id="settingsWifiStatus" data-status="disconnected">Disconnected</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <section class="settings-ap-section" aria-labelledby="settingsApTitle">
+                  <div class="settings-section-heading">
+                    <h3 id="settingsApTitle">AP Mode (ESP32 Local Wi-Fi)</h3>
+                    <p>Connect locally to send network configuration to the ESP32.</p>
+                  </div>
+                  <div class="settings-ap-grid">
+                    <div class="settings-ap-status"><span>AP Status</span><strong id="settingsApStatus" data-status="unavailable">Unavailable</strong></div>
+                    <label class="settings-field"><span>AP SSID</span><input id="settingsApSsid" type="text" readonly /></label>
+                    <label class="settings-field">
+                      <span>AP Password</span>
+                      <span class="settings-password-control">
+                        <input id="settingsApPassword" type="password" readonly />
+                        <button type="button" data-password-toggle="settingsApPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-eye"></use></svg></button>
+                      </span>
+                    </label>
+                    <button class="secondary-button" id="settingsConnectAp" type="button">Connect AP</button>
+                  </div>
+                  <button class="settings-test-button" id="settingsTestConnection" type="button">
+                    <svg aria-hidden="true"><use href="#icon-signal"></use></svg><span>Test connection</span>
+                  </button>
+                </section>
+              </article>
+            </div>
+
+            <footer class="settings-footer">
+              <p>Changes are validated locally and sent through the ESP32 settings adapter.</p>
+              <div>
+                <button class="secondary-button" id="settingsCancel" type="button" disabled>Cancel</button>
+                <button class="primary-button" id="settingsApply" type="button" disabled><span>Apply</span></button>
+              </div>
+            </footer>
+
+            <div class="settings-loading-overlay" id="settingsLoadingOverlay" hidden aria-hidden="true"><span></span></div>
+            <div class="settings-confirm" id="settingsResetConfirm" hidden>
+              <div class="settings-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="settingsResetConfirmTitle">
+                <span aria-hidden="true"><svg><use href="#icon-alert"></use></svg></span>
+                <h2 id="settingsResetConfirmTitle">Reset calibration references?</h2>
+                <p>X, Y and Z references will return to their defaults. Select Apply afterwards to save the reset.</p>
+                <div><button class="secondary-button" id="settingsResetConfirmCancel" type="button">Keep values</button><button class="settings-danger-button" id="settingsResetConfirmAccept" type="button">Reset calibration</button></div>
+              </div>
+            </div>
+          </form>
+          <p class="sr-only" id="settingsLiveStatus" role="status" aria-live="polite"></p>
+        </section>
       </main>
     </div>
   </div>
@@ -542,6 +749,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.6"></script>
+  <script type="module" src="./js/app.js?v=20260824.7"></script>
 </body>
 </html>

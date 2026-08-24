@@ -1,5 +1,3 @@
-import { ALERT_THRESHOLDS } from "./constants.js";
-
 export const APP_CONFIG = Object.freeze({
   refreshIntervalMs: 8000,
   relativeTimeIntervalMs: 15000,
@@ -36,9 +34,7 @@ export const SENSOR_DATA_CONFIG = Object.freeze({
   requestTimeoutMs: 12000,
   pollingIntervalMs: 45000,
   pageSize: 20,
-  maximumRecords: 20000,
-  batteryWarningVoltage: ALERT_THRESHOLDS.battery.warning,
-  batteryCriticalVoltage: ALERT_THRESHOLDS.battery.critical
+  maximumRecords: 20000
 });
 
 export const ALERT_CONFIG = Object.freeze({

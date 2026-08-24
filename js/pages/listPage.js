@@ -1,4 +1,5 @@
 import { SENSOR_DATA_CONFIG } from "../core/config.js";
+import { createAlertConfiguration } from "../core/settingsDefaults.js";
 import {
   filterSensorReadings,
   getLatestReadingDate,
@@ -66,6 +67,9 @@ export class ListPage {
   constructor(sensorDataService, options = {}) {
     this.service = sensorDataService;
     this.config = options.config || SENSOR_DATA_CONFIG;
+    this.settingsService = options.settingsService || null;
+    this.batteryThresholds = this.settingsService?.getBatteryThresholds()
+      || createAlertConfiguration().battery;
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
@@ -89,6 +93,10 @@ export class ListPage {
 
     this.initializePickers();
     this.bindEvents();
+    this.unsubscribeSettings = this.settingsService?.subscribe(() => {
+      this.batteryThresholds = this.settingsService.getBatteryThresholds();
+      this.renderTable();
+    }, { immediate: false });
     this.render();
   }
 
@@ -436,10 +444,10 @@ export class ListPage {
   }
 
   batteryStatus(voltage) {
-    if (voltage < this.config.batteryCriticalVoltage) {
+    if (voltage < this.batteryThresholds.critical) {
       return "critical";
     }
-    if (voltage < this.config.batteryWarningVoltage) {
+    if (voltage < this.batteryThresholds.warning) {
       return "warning";
     }
     return "normal";
@@ -563,6 +571,7 @@ export class ListPage {
   destroy() {
     this.close();
     this.abortController.abort();
+    this.unsubscribeSettings?.();
     this.service.destroy();
   }
 }

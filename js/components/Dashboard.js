@@ -28,6 +28,7 @@ export class Dashboard extends EventTarget {
       towersPage: byId("towersPage"),
       listPage: byId("listPage"),
       alertsPage: byId("alertsPage"),
+      settingsPage: byId("settingsPage"),
       topbarTitle: byId("topbarTitle"),
       sidebarBackdrop: byId("sidebarBackdrop"),
       menuButton: byId("menuButton"),
@@ -55,7 +56,7 @@ export class Dashboard extends EventTarget {
         const target = item.dataset.navTarget;
         this.closeMobileNavigation();
         this.closeAccountMenu();
-        if (["Towers", "List", "Alerts"].includes(target)) {
+        if (["Towers", "List", "Alerts", "System settings"].includes(target)) {
           this.emitAction(DASHBOARD_ACTION.NAVIGATE, { target });
         } else {
           this.showToast(`${target} is prepared for the next integration phase.`, "info");
@@ -194,7 +195,7 @@ export class Dashboard extends EventTarget {
   }
 
   setActiveView(view) {
-    if (!["Towers", "List", "Alerts"].includes(view)) {
+    if (!["Towers", "List", "Alerts", "System settings"].includes(view)) {
       return false;
     }
 
@@ -207,6 +208,9 @@ export class Dashboard extends EventTarget {
     }
     if (this.elements.alertsPage) {
       this.elements.alertsPage.hidden = view !== "Alerts";
+    }
+    if (this.elements.settingsPage) {
+      this.elements.settingsPage.hidden = view !== "System settings";
     }
     this.document.querySelectorAll(".sidebar-nav [data-nav-target]").forEach((item) => {
       const active = item.dataset.navTarget === view;
@@ -221,7 +225,8 @@ export class Dashboard extends EventTarget {
     const pageTitles = {
       Towers: "Tower Monitoring",
       List: "Sensor Data List",
-      Alerts: "Alerts Center"
+      Alerts: "Alerts Center",
+      "System settings": "System Settings"
     };
     const pageTitle = pageTitles[view];
     if (this.elements.topbarTitle) {
