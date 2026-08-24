@@ -1,11 +1,8 @@
-import { Dashboard } from "./components/Dashboard.js?v=20260824.1";
+import { Dashboard } from "./components/Dashboard.js?v=20260824.2";
 import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js";
 import {
-  CHART_MODE,
   CONNECTION_STATUS,
-  DASHBOARD_ACTION,
-  RANGE_DEFINITIONS,
-  VALID_CHART_MODES
+  DASHBOARD_ACTION
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
@@ -24,10 +21,7 @@ const initialState = {
   alerts: [],
   summary: null,
   ranking: [],
-  trendData: { labels: [], datasets: [] },
-  distributionData: [],
   range: "realtime",
-  chartMode: CHART_MODE.TREND,
   autoRefresh: true,
   lastUpdatedAt: 0,
   loading: true,
@@ -49,9 +43,8 @@ let alertsPage;
 let towersPage;
 let refreshPromise = null;
 let autoRefreshTimer = null;
-let analyticsTimer = null;
 const cleanupCallbacks = [];
-let currentView = "Overview";
+let currentView = "Towers";
 
 function updateConnectionStatus(serviceName, status) {
   store.setState((state) => ({
@@ -76,8 +69,6 @@ function applyDashboardPayload({ payload }) {
     alerts: processed.alerts,
     summary: processed.summary,
     ranking: processed.ranking,
-    trendData: processed.trendData,
-    distributionData: processed.distributionData,
     lastUpdatedAt: Date.now(),
     error: null
   });
@@ -127,88 +118,40 @@ async function refreshDashboard({ automatic = false, initial = false } = {}) {
   return refreshPromise;
 }
 
-function rebuildAnalytics(patch) {
-  const currentState = store.getState();
-  if (currentState.loading) {
-    return;
-  }
+function getPageControllers() {
+  return new Map([
+    ["Towers", towersPage],
+    ["List", listPage],
+    ["Alerts", alertsPage]
+  ]);
+}
 
-  window.clearTimeout(analyticsTimer);
-  store.setState({ loading: true });
-  analyticsTimer = window.setTimeout(() => {
-    try {
-      const state = store.getState();
-      const nextRange = patch.range || state.range;
-      const processed = processDashboardPayload(
-        { stations: state.stations, sensorData: state.sensorData },
-        { range: nextRange, timestamp: state.lastUpdatedAt || Date.now() }
-      );
-
-      store.setState({
-        ...patch,
-        stations: processed.stations,
-        sensorData: processed.sensorData,
-        alerts: processed.alerts,
-        summary: processed.summary,
-        ranking: processed.ranking,
-        trendData: processed.trendData,
-        distributionData: processed.distributionData,
-        loading: false
-      });
-    } catch (error) {
-      window.console.error("Analytics update failed.", error);
-      store.setState({ loading: false, error: error.message });
-      dashboard.showToast("The analytics view could not be updated.", "error");
+function syncPageControllers() {
+  getPageControllers().forEach((controller, view) => {
+    if (view === currentView) {
+      controller?.open();
+    } else {
+      controller?.close();
     }
-  }, APP_CONFIG.analyticsTransitionMs);
+  });
+}
+
+function closePageControllers() {
+  getPageControllers().forEach((controller) => controller?.close());
 }
 
 function handleDashboardAction(event) {
   const { action } = event.detail;
-  const state = store.getState();
 
   switch (action) {
-    case DASHBOARD_ACTION.REFRESH:
-      refreshDashboard({ automatic: false });
-      break;
     case DASHBOARD_ACTION.NAVIGATE:
       if (dashboard.setActiveView(event.detail.target)) {
         currentView = event.detail.target;
-        if (currentView === "List") {
-          listPage.open();
-        } else {
-          listPage.close();
-        }
-        if (currentView === "Towers") {
-          towersPage.open();
-        } else {
-          towersPage.close();
-        }
-        if (currentView === "Alerts") {
-          alertsPage.open();
-        } else {
-          alertsPage.close();
-        }
+        syncPageControllers();
       }
-      break;
-    case DASHBOARD_ACTION.RANGE_CHANGE:
-      if (RANGE_DEFINITIONS[event.detail.range] && event.detail.range !== state.range) {
-        rebuildAnalytics({ range: event.detail.range });
-      }
-      break;
-    case DASHBOARD_ACTION.CHART_MODE_CHANGE:
-      if (VALID_CHART_MODES.includes(event.detail.mode) && event.detail.mode !== state.chartMode) {
-        rebuildAnalytics({ chartMode: event.detail.mode });
-      }
-      break;
-    case DASHBOARD_ACTION.AUTO_REFRESH_CHANGE:
-      store.setState({ autoRefresh: Boolean(event.detail.enabled) });
-      dashboard.showToast(`Auto-refresh ${event.detail.enabled ? "enabled" : "paused"}.`, "info");
       break;
     case DASHBOARD_ACTION.SIGN_OUT:
-      listPage?.close();
-      towersPage?.close();
-      alertsPage?.close();
+      closePageControllers();
       void authService.signOut();
       break;
     default:
@@ -232,8 +175,6 @@ function handleMqttPacket(rawPacket) {
       alerts: processed.alerts,
       summary: processed.summary,
       ranking: processed.ranking,
-      trendData: processed.trendData,
-      distributionData: processed.distributionData,
       lastUpdatedAt: Date.now(),
       error: null
     });
@@ -251,7 +192,7 @@ function startAutoRefresh() {
     const state = store.getState();
     if (
       !document.hidden &&
-      currentView === "Overview" &&
+      currentView === "Towers" &&
       state.autoRefresh &&
       state.range === "realtime" &&
       !state.loading &&
@@ -276,7 +217,6 @@ function registerServiceEvents() {
 function destroyApplication() {
   cleanupCallbacks.splice(0).forEach((cleanup) => cleanup());
   window.clearInterval(autoRefreshTimer);
-  window.clearTimeout(analyticsTimer);
   dashboard?.destroy();
   listPage?.destroy();
   towersPage?.destroy();
@@ -319,14 +259,13 @@ async function bootstrap() {
     });
     dashboard.setIdentity(identity.displayName || identity.username);
     dashboard.setActiveView(currentView);
+    syncPageControllers();
     dashboard.addEventListener("action", handleDashboardAction);
     registerServiceEvents();
     cleanupCallbacks.push(
       authService.onAuthStateChange((event) => {
         if (event === "SIGNED_OUT") {
-          listPage?.close();
-          towersPage?.close();
-          alertsPage?.close();
+          closePageControllers();
           authService.redirect("sign-in.html");
         }
       })

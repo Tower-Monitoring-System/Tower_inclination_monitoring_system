@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="Tower Inclination Monitoring System Dashboard" />
   <meta name="theme-color" content="#082d57" />
-  <title>Overview | Tower Inclination Monitoring System</title>
+  <title>Tower Monitoring | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
   <link rel="stylesheet" href="./css/components.css?v=20260823.13" />
@@ -97,14 +97,10 @@
 
       <nav class="sidebar-nav" aria-label="System modules">
         <p class="nav-section-label">Monitoring</p>
-        <button class="nav-item is-active" type="button" data-nav-target="Overview" aria-current="page">
-          <svg aria-hidden="true"><use href="#icon-grid"></use></svg>
-          <span>Overview</span>
-        </button>
-        <button class="nav-item" type="button" data-nav-target="Towers">
+        <button class="nav-item is-active" type="button" data-nav-target="Towers" aria-current="page">
           <svg aria-hidden="true"><use href="#icon-tower"></use></svg>
           <span>Towers</span>
-          <small id="sidebarTowerCount">8</small>
+          <small id="sidebarTowerCount">0</small>
         </button>
         <button class="nav-item" type="button" data-nav-target="List">
           <svg aria-hidden="true"><use href="#icon-table"></use></svg>
@@ -113,9 +109,12 @@
         <button class="nav-item" type="button" data-nav-target="Alerts">
           <svg aria-hidden="true"><use href="#icon-alert"></use></svg>
           <span>Alerts</span>
-          <small class="nav-alert-count" id="sidebarAlertCount">2</small>
+          <small class="nav-alert-count" id="sidebarAlertCount">0</small>
         </button>
-
+        <button class="nav-item" type="button" data-nav-target="System settings">
+          <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
+          <span>System settings</span>
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -158,14 +157,14 @@
             <svg aria-hidden="true"><use href="#icon-menu"></use></svg>
           </button>
           <div class="topbar-heading">
-            <strong id="topbarTitle">Tower Inclination Monitoring System</strong>
+            <strong id="topbarTitle">Tower Monitoring</strong>
           </div>
         </div>
 
         <div class="topbar-actions">
-          <button class="icon-button notification-button" id="notificationButton" type="button" aria-label="View 2 active notifications">
+          <button class="icon-button notification-button" id="notificationButton" type="button" aria-label="View 0 active notifications">
             <svg aria-hidden="true"><use href="#icon-bell"></use></svg>
-            <span id="notificationCount">2</span>
+            <span id="notificationCount">0</span>
           </button>
           <div class="account-menu-wrap">
             <button class="account-button" id="accountButton" type="button" aria-haspopup="menu" aria-expanded="false">
@@ -181,10 +180,6 @@
                 <span class="user-avatar" data-user-initial aria-hidden="true">O</span>
                 <p><strong data-auth-username>Operator</strong><span>Authenticated session</span></p>
               </div>
-              <button type="button" role="menuitem" data-nav-target="System settings">
-                <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
-                System settings
-              </button>
               <button type="button" role="menuitem" data-action="sign-out">
                 <svg aria-hidden="true"><use href="#icon-logout"></use></svg>
                 Sign out
@@ -195,201 +190,6 @@
       </header>
 
       <main class="dashboard-content" id="dashboardContent" tabindex="-1">
-        <div class="page-view" id="overviewPage" data-page-view="Overview">
-        <section class="page-intro" aria-labelledby="pageTitle">
-          <div>
-            <h1 id="pageTitle">System overview</h1>
-            <p>Track tower inclination, sensor health, and structural alerts in real time.</p>
-          </div>
-          <div class="page-actions">
-            <div class="last-sync-summary">
-              <span>Last synchronized</span>
-              <strong id="lastSyncHeader">Just now</strong>
-            </div>
-            <button class="secondary-button" id="exportButton" type="button">
-              <svg aria-hidden="true"><use href="#icon-download"></use></svg>
-              Export
-            </button>
-            <button class="primary-button" id="refreshButton" type="button">
-              <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
-              <span>Refresh data</span>
-            </button>
-          </div>
-        </section>
-
-        <section class="summary-grid" aria-label="System summary">
-          <article class="metric-card metric-towers">
-            <div class="metric-header">
-              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-tower"></use></svg></span>
-              <span class="metric-trend positive">+2.4%</span>
-            </div>
-            <p>Total towers</p>
-            <strong class="metric-value" id="totalTowerCount">8</strong>
-            <div class="metric-breakdown">
-              <span><i class="status-dot normal"></i><b id="onlineTowerCount">7</b> Online</span>
-              <span><i class="status-dot offline"></i><b id="offlineTowerCount">1</b> Offline</span>
-            </div>
-            <div class="progress-track" aria-hidden="true"><span id="towerOnlineProgress"></span></div>
-            <small id="towerOnlinePercent">87.5% network availability</small>
-          </article>
-
-          <article class="metric-card metric-inclination">
-            <div class="metric-header">
-              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-chart"></use></svg></span>
-              <span class="metric-trend neutral">Overall</span>
-            </div>
-            <p>Average inclination</p>
-            <strong class="metric-value"><span id="averageInclination">0.64</span>°</strong>
-            <svg class="metric-sparkline" viewBox="0 0 240 54" preserveAspectRatio="none" aria-hidden="true">
-              <defs>
-                <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0" stop-color="#2478f3" stop-opacity=".25"></stop>
-                  <stop offset="1" stop-color="#2478f3" stop-opacity="0"></stop>
-                </linearGradient>
-              </defs>
-              <path class="spark-area" d="M0 39 12 27 24 32 36 19 48 36 60 30 72 33 84 21 96 26 108 16 120 28 132 23 144 31 156 18 168 25 180 12 192 29 204 22 216 34 228 17 240 20V54H0Z"></path>
-              <path class="spark-line" d="M0 39 12 27 24 32 36 19 48 36 60 30 72 33 84 21 96 26 108 16 120 28 132 23 144 31 156 18 168 25 180 12 192 29 204 22 216 34 228 17 240 20"></path>
-            </svg>
-            <div class="metric-footer"><span>Maximum <b id="maximumInclination">1.24°</b></span><span>Minimum <b id="minimumInclination">0.24°</b></span></div>
-          </article>
-
-          <article class="metric-card metric-sensors">
-            <div class="metric-header">
-              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-signal"></use></svg></span>
-              <span class="metric-trend positive">+4 today</span>
-            </div>
-            <p>Active sensors</p>
-            <strong class="metric-value" id="activeSensorCount">32</strong>
-            <div class="metric-breakdown">
-              <span><i class="status-dot normal"></i><b id="normalSensorCount">30</b> Normal</span>
-              <span><i class="status-dot warning"></i><b id="alertSensorCount">2</b> Attention</span>
-            </div>
-            <div class="progress-track sensor-progress" aria-hidden="true"><span id="sensorNormalProgress"></span></div>
-            <small id="sensorNormalPercent">93.8% reporting normally</small>
-          </article>
-
-          <article class="metric-card metric-health">
-            <div class="metric-header">
-              <span class="metric-icon"><svg aria-hidden="true"><use href="#icon-shield"></use></svg></span>
-              <span class="health-label">Good</span>
-            </div>
-            <p>System health</p>
-            <div class="health-gauge" role="img" aria-label="System health 94 percent">
-              <div class="gauge-arc" id="healthGauge"></div>
-              <strong><span id="systemHealthValue">94</span>%</strong>
-            </div>
-            <div class="health-message">
-              <svg aria-hidden="true"><use href="#icon-check"></use></svg>
-              <span id="healthMessage">Core services operational</span>
-            </div>
-          </article>
-        </section>
-
-        <section class="analytics-panel" id="analyticsPanel" aria-labelledby="analyticsTitle">
-          <div class="panel-toolbar">
-            <div class="view-tabs" role="tablist" aria-label="Analytics view">
-              <button id="trendTab" type="button" role="tab" aria-selected="true" aria-controls="chartSection" data-chart-mode="trend">Inclination trend</button>
-              <button id="distributionTab" type="button" role="tab" aria-selected="false" aria-controls="chartSection" data-chart-mode="distribution">Tilt distribution</button>
-            </div>
-            <div class="toolbar-filters">
-              <div class="range-filters" role="group" aria-label="Time range">
-                <button class="is-active" type="button" data-range="realtime">Real-time</button>
-                <button type="button" data-range="24h">24H</button>
-                <button type="button" data-range="7d">7D</button>
-                <button type="button" data-range="30d">30D</button>
-                <button type="button" data-range="custom">Custom</button>
-              </div>
-              <button class="date-range-button" id="dateRangeButton" type="button">
-                <svg aria-hidden="true"><use href="#icon-calendar"></use></svg>
-                <span id="dateRangeLabel">Live · Last 24 samples</span>
-              </button>
-            </div>
-          </div>
-
-          <div class="analytics-grid">
-            <div class="chart-section" id="chartSection" role="tabpanel" aria-labelledby="trendTab">
-              <div class="chart-heading">
-                <div>
-                  <p class="panel-kicker">Structural movement</p>
-                  <h2 id="analyticsTitle">Inclination trend</h2>
-                  <span id="chartDescription">Maximum tilt angle by tower</span>
-                </div>
-                <div class="chart-summary">
-                  <span>Alert threshold</span>
-                  <strong>1.00°</strong>
-                </div>
-              </div>
-
-              <div class="chart-container">
-                <canvas
-                  id="inclinationChart"
-                  width="900"
-                  height="390"
-                  role="img"
-                  aria-label="Line chart showing tower inclination over time"
-                >
-                  Tower inclination trend chart
-                </canvas>
-                <p class="chart-fallback" id="chartFallback" role="status" hidden>
-                  Chart rendering is temporarily unavailable. Monitoring data remains available in the summary and ranking table.
-                </p>
-                <div class="chart-tooltip" id="chartTooltip" role="status" aria-live="polite"></div>
-              </div>
-              <div class="chart-legend" id="chartLegend" aria-label="Chart legend"></div>
-            </div>
-
-            <div class="ranking-section">
-              <div class="ranking-heading">
-                <div>
-                  <p class="panel-kicker">Attention priority</p>
-                  <h2>Top towers by inclination</h2>
-                </div>
-                <span class="ranking-count" id="rankingCount">8 towers</span>
-              </div>
-
-              <div class="table-wrap">
-                <table>
-                  <caption class="sr-only">Towers ranked by maximum tilt angle</caption>
-                  <thead>
-                    <tr>
-                      <th scope="col">Rank</th>
-                      <th scope="col">Tower</th>
-                      <th scope="col">Max tilt</th>
-                      <th scope="col">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody id="rankingBody"></tbody>
-                </table>
-              </div>
-
-              <div class="ranking-footer">
-                <span><i class="status-dot normal"></i><b id="normalTowerCount">5</b> Normal</span>
-                <span><i class="status-dot warning"></i><b id="warningTowerCount">2</b> Warning</span>
-                <span><i class="status-dot alert"></i><b id="criticalTowerCount">1</b> Alert</span>
-                <span><i class="status-dot offline"></i><b id="offlineRankingCount">0</b> Offline</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="panel-loading" aria-hidden="true"><span></span><p>Updating monitoring data…</p></div>
-        </section>
-
-        <footer class="dashboard-footer">
-          <div class="update-status" aria-live="polite">
-            <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
-            <span>Last updated <strong id="lastUpdated">just now</strong></span>
-          </div>
-          <div class="footer-controls">
-            <span>All times are in UTC+7</span>
-            <label class="auto-refresh-control" for="autoRefreshToggle">
-              <input id="autoRefreshToggle" type="checkbox" checked />
-              <span class="switch" aria-hidden="true"></span>
-              Auto-refresh
-            </label>
-          </div>
-        </footer>
-        </div>
-
         <section
           class="page-view towers-page"
           id="towersPage"
@@ -738,6 +538,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.4"></script>
+  <script type="module" src="./js/app.js?v=20260824.5"></script>
 </body>
 </html>
