@@ -11,10 +11,14 @@ export class AlertService {
     this.settingsService = options.settingsService || null;
   }
 
-  async fetchAlerts() {
-    const result = await this.sensorDataService.fetchReadings();
+  async fetchAlerts(options = {}) {
+    const towerId = typeof options.towerId === "string" ? options.towerId.trim() : "";
+    if (!towerId) {
+      throw new TypeError("Tower ID is required to fetch alerts.");
+    }
+    const result = await this.sensorDataService.fetchReadings({ towerId });
     const alerts = createAlertsFromReadings(result.readings, {
-      defaultTowerId: this.config.sourceTowerId,
+      defaultTowerId: towerId,
       maximumAlerts: this.config.maximumAlerts,
       configuration: this.settingsService?.getAlertConfiguration()
     });

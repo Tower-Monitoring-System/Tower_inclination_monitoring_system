@@ -8,12 +8,12 @@
   <title>Tower Monitoring | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
-  <link rel="stylesheet" href="./css/components.css?v=20260824.14" />
+  <link rel="stylesheet" href="./css/components.css?v=20260824.15" />
   <link rel="stylesheet" href="./css/dashboard.css?v=20260824.14" />
-  <link rel="stylesheet" href="./css/list.css?v=20260824.4" />
-  <link rel="stylesheet" href="./css/alerts.css?v=20260824.2" />
+  <link rel="stylesheet" href="./css/list.css?v=20260824.5" />
+  <link rel="stylesheet" href="./css/alerts.css?v=20260824.3" />
   <link rel="stylesheet" href="./css/towers.css?v=20260824.4" />
-  <link rel="stylesheet" href="./css/settings.css?v=20260824.2" />
+  <link rel="stylesheet" href="./css/settings.css?v=20260824.3" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -367,6 +367,13 @@
                 <span id="listFilterDescription">Select a date to view sensor data for that day</span>
               </div>
 
+              <label class="tower-select-control list-tower-control" for="listTowerSelect">
+                <span>Select Tower</span>
+                <select id="listTowerSelect" aria-label="Tower for sensor data list" disabled>
+                  <option value="">No towers added</option>
+                </select>
+              </label>
+
               <div class="list-period-tabs" role="group" aria-label="Sensor data period">
                 <button type="button" class="is-active" data-list-period="day" aria-pressed="true">Day</button>
                 <button type="button" data-list-period="month" aria-pressed="false">Month</button>
@@ -475,6 +482,13 @@
               <div class="alerts-toolbar-title">
                 <h2 id="alertsTableTitle">Alert history</h2>
               </div>
+
+              <label class="tower-select-control alerts-tower-control" for="alertsTowerSelect">
+                <span>Select Tower</span>
+                <select id="alertsTowerSelect" aria-label="Tower for alert history" disabled>
+                  <option value="">No towers added</option>
+                </select>
+              </label>
 
               <label class="alerts-select-control" for="alertTypeFilter">
                 <span>Alert type</span>
@@ -805,6 +819,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.10"></script>
+  <script type="module" src="./js/app.js?v=20260824.11"></script>
 </body>
 </html>

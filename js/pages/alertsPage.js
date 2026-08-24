@@ -5,6 +5,11 @@ import {
   paginateAlerts,
   summarizeAlerts
 } from "../logic/alertProcessor.js";
+import {
+  NO_TOWERS_MESSAGE,
+  renderTowerSelect,
+  resolveSelectedTowerId
+} from "../logic/towerSelection.js";
 
 const EVENT_DATE_TIME_FORMATTER = new Intl.DateTimeFormat("en-US", {
   timeZone: "UTC",
@@ -60,12 +65,15 @@ export class AlertsPage {
     this.config = options.config || ALERT_CONFIG;
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
+    this.towerRegistry = options.towerRegistryService || null;
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
     this.onSummaryChange = typeof options.onSummaryChange === "function"
       ? options.onSummaryChange
       : () => {};
     this.monitorWhenInactive = options.monitorWhenInactive === true;
     this.abortController = new AbortController();
+    this.registryState = this.towerRegistry?.getState() || { towers: [], initialized: true, error: null };
+    this.selectedTowerId = "";
     this.alerts = [];
     this.summary = summarizeAlerts([]);
     this.type = "all";
@@ -79,9 +87,15 @@ export class AlertsPage {
     this.lastUpdatedAt = 0;
     this.pollingTimer = null;
     this.refreshPromise = null;
+    this.requestSequence = 0;
     this.elements = this.collectElements();
 
     this.bindEvents();
+    this.unsubscribeTowerRegistry = this.towerRegistry?.subscribe(
+      (state) => this.handleTowerRegistryState(state),
+      { immediate: false }
+    );
+    this.syncRegisteredTowers();
     this.render();
   }
 
@@ -89,6 +103,7 @@ export class AlertsPage {
     const byId = (id) => this.document.getElementById(id);
     return {
       page: byId("alertsPage"),
+      towerSelect: byId("alertsTowerSelect"),
       syncSummary: byId("alertsSyncSummary"),
       lastUpdated: byId("alertsLastUpdated"),
       totalCount: byId("alertsTotalCount"),
@@ -114,6 +129,7 @@ export class AlertsPage {
   }
 
   bindEvents() {
+    this.listen(this.elements.towerSelect, "change", (event) => this.changeTower(event.target.value));
     this.listen(this.elements.typeFilter, "change", (event) => {
       this.type = event.target.value;
       this.resetFilteredView();
@@ -144,6 +160,10 @@ export class AlertsPage {
       return;
     }
     this.active = true;
+    if (!this.selectedTowerId) {
+      this.render();
+      return;
+    }
     if (this.refreshPromise) {
       return;
     }
@@ -156,24 +176,93 @@ export class AlertsPage {
       this.schedulePolling();
     } else {
       this.clearPollingTimer();
-      this.service.cancelActiveRequest();
+      this.cancelRefresh();
     }
     this.renderPollingStatus();
   }
 
+  handleTowerRegistryState(state) {
+    this.registryState = state;
+    this.syncRegisteredTowers();
+  }
+
+  syncRegisteredTowers() {
+    const towers = this.registryState.towers || [];
+    const nextTowerId = resolveSelectedTowerId(towers, this.selectedTowerId);
+    const selectionChanged = nextTowerId !== this.selectedTowerId;
+    this.selectedTowerId = nextTowerId;
+    renderTowerSelect(this.document, this.elements.towerSelect, towers, this.selectedTowerId);
+
+    if (!selectionChanged) {
+      this.render();
+      return;
+    }
+
+    this.resetTowerData();
+    if (this.selectedTowerId && (this.active || this.monitorWhenInactive)) {
+      void this.refresh({ automatic: true });
+    } else {
+      this.render();
+    }
+  }
+
+  changeTower(towerId) {
+    const nextTowerId = resolveSelectedTowerId(this.registryState.towers || [], towerId);
+    if (!nextTowerId || nextTowerId === this.selectedTowerId) {
+      this.elements.towerSelect.value = this.selectedTowerId;
+      return;
+    }
+
+    this.selectedTowerId = nextTowerId;
+    this.resetTowerData();
+    this.render();
+    if (this.active || this.monitorWhenInactive) {
+      void this.refresh({ automatic: true });
+    }
+  }
+
+  cancelRefresh() {
+    this.requestSequence += 1;
+    this.service.cancelActiveRequest();
+    this.refreshPromise = null;
+    this.loading = false;
+  }
+
+  resetTowerData() {
+    this.clearPollingTimer();
+    this.cancelRefresh();
+    this.alerts = [];
+    this.summary = summarizeAlerts([]);
+    this.currentPage = 1;
+    this.expandedAlertId = null;
+    this.error = null;
+    this.lastUpdatedAt = 0;
+    this.onSummaryChange(this.summary);
+  }
+
   async refresh({ automatic = false } = {}) {
+    if (!this.selectedTowerId) {
+      this.clearPollingTimer();
+      this.render();
+      return null;
+    }
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
 
+    const towerId = this.selectedTowerId;
+    const requestSequence = ++this.requestSequence;
     this.clearPollingTimer();
     this.loading = true;
     this.error = null;
     this.render();
 
-    this.refreshPromise = (async () => {
+    const refreshPromise = (async () => {
       try {
-        const result = await this.service.fetchAlerts();
+        const result = await this.service.fetchAlerts({ towerId });
+        if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
+          return;
+        }
         this.alerts = [...result.alerts];
         this.summary = result.summary || summarizeAlerts(this.alerts);
         this.onSummaryChange(this.summary);
@@ -193,6 +282,14 @@ export class AlertsPage {
         if (error?.name === "AbortError") {
           return;
         }
+        if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
+          return;
+        }
+        if (error?.status === 404) {
+          this.alerts = [];
+          this.summary = summarizeAlerts([]);
+          this.onSummaryChange(this.summary);
+        }
         const timedOut = error?.name === "TimeoutError";
         this.error = timedOut
           ? "The request timed out. The last valid alerts were retained."
@@ -203,14 +300,20 @@ export class AlertsPage {
         }
         this.announce(this.error);
       } finally {
+        if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
+          return;
+        }
         this.loading = false;
-        this.refreshPromise = null;
+        if (this.refreshPromise === refreshPromise) {
+          this.refreshPromise = null;
+        }
         this.render();
         this.schedulePolling();
       }
     })();
 
-    return this.refreshPromise;
+    this.refreshPromise = refreshPromise;
+    return refreshPromise;
   }
 
   getFilteredAlerts() {
@@ -222,6 +325,8 @@ export class AlertsPage {
   }
 
   render() {
+    this.elements.towerSelect.value = this.selectedTowerId;
+    this.elements.towerSelect.disabled = (this.registryState.towers || []).length === 0;
     this.elements.typeFilter.value = this.type;
     this.elements.sortOrder.value = this.sort;
     this.document.querySelectorAll("[data-alert-severity]").forEach((button) => {
@@ -229,7 +334,7 @@ export class AlertsPage {
       button.classList.toggle("is-active", active);
       button.setAttribute("aria-pressed", active ? "true" : "false");
     });
-    this.elements.refreshButton.disabled = this.loading;
+    this.elements.refreshButton.disabled = this.loading || !this.selectedTowerId;
     this.elements.refreshButton.classList.toggle("is-loading", this.loading);
     this.renderSummary();
     this.renderSyncState();
@@ -265,7 +370,7 @@ export class AlertsPage {
   }
 
   renderError() {
-    this.elements.errorBanner.hidden = !this.error;
+    this.elements.errorBanner.hidden = !this.error || !this.selectedTowerId;
     if (this.error) {
       this.elements.errorMessage.textContent = this.error;
     }
@@ -305,6 +410,14 @@ export class AlertsPage {
     const filtered = this.getFilteredAlerts();
     const pageData = paginateAlerts(filtered, this.currentPage, this.config.pageSize);
     this.currentPage = pageData.page;
+
+    if (!this.selectedTowerId) {
+      this.elements.tableBody.replaceChildren(
+        this.createStateRow("empty", NO_TOWERS_MESSAGE)
+      );
+      this.renderPagination(0, pageData);
+      return;
+    }
 
     if (this.loading && this.alerts.length === 0) {
       this.elements.tableBody.replaceChildren(
@@ -492,6 +605,10 @@ export class AlertsPage {
 
   schedulePolling() {
     this.clearPollingTimer();
+    if (!this.selectedTowerId) {
+      this.renderPollingStatus();
+      return;
+    }
     if (!this.active && !this.monitorWhenInactive) {
       this.renderPollingStatus();
       return;
@@ -518,7 +635,9 @@ export class AlertsPage {
     if (!this.elements.pollingStatus) {
       return;
     }
-    if (this.loading) {
+    if (!this.selectedTowerId) {
+      this.elements.pollingStatus.textContent = "Add a tower in System Settings to start alert monitoring";
+    } else if (this.loading) {
       this.elements.pollingStatus.textContent = "Checking for new sensor events…";
     } else if (!this.active && !this.monitorWhenInactive) {
       this.elements.pollingStatus.textContent = "Updates resume when this page is open";
@@ -533,6 +652,9 @@ export class AlertsPage {
   }
 
   handleVisibilityChange() {
+    if (!this.selectedTowerId) {
+      return;
+    }
     if (!this.active && !this.monitorWhenInactive) {
       return;
     }
@@ -557,6 +679,7 @@ export class AlertsPage {
     this.monitorWhenInactive = false;
     this.close();
     this.abortController.abort();
+    this.unsubscribeTowerRegistry?.();
     this.service.destroy();
   }
 }

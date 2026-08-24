@@ -13,7 +13,7 @@
 .settings-layout {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(430px, 0.9fr) minmax(560px, 1.1fr);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.06fr);
   align-items: stretch;
   gap: 18px 22px;
 }
@@ -33,7 +33,7 @@
 .settings-calibration-card {
   display: flex;
   flex-direction: column;
-  min-height: 680px;
+  min-height: 520px;
 }
 
 .settings-left-column {
@@ -45,10 +45,14 @@
 
 .settings-right-column {
   display: grid;
-  grid-template-rows: auto auto;
-  align-content: start;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-content: stretch;
   gap: 18px;
   min-width: 0;
+}
+
+.settings-wifi-card {
+  height: 100%;
 }
 
 .settings-card-header {
@@ -56,7 +60,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .settings-card-header h2,
@@ -119,8 +123,8 @@
 }
 
 .settings-threshold-section {
-  margin-top: 29px;
-  padding-top: 27px;
+  margin-top: 23px;
+  padding-top: 21px;
   border-top: 1px solid var(--border);
 }
 
@@ -270,14 +274,15 @@
 }
 
 .tower-management-table-wrap {
-  overflow-x: auto;
+  overflow-x: hidden;
   border: 1px solid var(--border);
   border-radius: 10px;
 }
 
 .tower-management-table {
   width: 100%;
-  min-width: 610px;
+  min-width: 0;
+  table-layout: fixed;
   border-collapse: collapse;
   color: #304762;
   font-size: 0.59rem;
@@ -289,7 +294,14 @@
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
+  overflow-wrap: anywhere;
 }
+
+.tower-management-table th:nth-child(1) { width: 17%; }
+.tower-management-table th:nth-child(2) { width: 18%; }
+.tower-management-table th:nth-child(3) { width: 28%; }
+.tower-management-table th:nth-child(4) { width: 25%; }
+.tower-management-table th:nth-child(5) { width: 12%; }
 
 .tower-management-table th {
   color: #4c6078;
@@ -314,7 +326,7 @@
 }
 
 .tower-management-table td:nth-child(4) {
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .tower-management-empty-row td {
@@ -381,7 +393,7 @@
   grid-template-columns: 1.25fr 0.95fr 0.95fr;
   gap: 10px;
   margin-top: auto;
-  padding-top: 30px;
+  padding-top: 24px;
 }
 
 .settings-calibration-actions button,
@@ -773,6 +785,15 @@
 
   .tower-management-form-actions button:only-child {
     grid-column: 2;
+  }
+
+  .tower-management-table-wrap {
+    overflow-x: auto;
+  }
+
+  .tower-management-table {
+    min-width: 560px;
+    table-layout: auto;
   }
 
   .settings-network-column + .settings-network-column {

@@ -6,11 +6,11 @@ import {
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
-import { AlertsPage } from "./pages/alertsPage.js?v=20260824.2";
-import { ListPage } from "./pages/listPage.js?v=20260824.2";
+import { AlertsPage } from "./pages/alertsPage.js?v=20260824.3";
+import { ListPage } from "./pages/listPage.js?v=20260824.3";
 import { SettingsPage } from "./pages/settingsPage.js?v=20260824.2";
 import { TowersPage } from "./pages/towersPage.js?v=20260824.4";
-import { AlertService } from "./services/alertService.js?v=20260824.2";
+import { AlertService } from "./services/alertService.js?v=20260824.3";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
 import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260824.1";
@@ -266,14 +266,16 @@ async function bootstrap() {
     sensorDataService = new SensorDataService();
     listPage = new ListPage(sensorDataService, {
       onToast: (message, type) => dashboard.showToast(message, type),
-      settingsService
+      settingsService,
+      towerRegistryService
     });
     const alertsSensorDataService = new SensorDataService();
     const alertService = new AlertService(alertsSensorDataService, { settingsService });
     alertsPage = new AlertsPage(alertService, {
       onToast: (message, type) => dashboard.showToast(message, type),
       onSummaryChange: (summary) => dashboard.updateAlertSummary(summary),
-      monitorWhenInactive: true
+      monitorWhenInactive: true,
+      towerRegistryService
     });
     towersPage = new TowersPage(store.asReadonly(), {
       onToast: (message, type) => dashboard.showToast(message, type),

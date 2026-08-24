@@ -6,6 +6,11 @@ import {
   paginateSensorReadings,
   sortSensorReadings
 } from "../logic/sensorDataProcessor.js";
+import {
+  NO_TOWERS_MESSAGE,
+  renderTowerSelect,
+  resolveSelectedTowerId
+} from "../logic/towerSelection.js";
 import { downloadSensorDataWorkbook } from "../utils/xlsxExporter.js";
 
 const PERIOD_COPY = Object.freeze({
@@ -68,12 +73,15 @@ export class ListPage {
     this.service = sensorDataService;
     this.config = options.config || SENSOR_DATA_CONFIG;
     this.settingsService = options.settingsService || null;
+    this.towerRegistry = options.towerRegistryService || null;
     this.batteryThresholds = this.settingsService?.getBatteryThresholds()
       || createAlertConfiguration().battery;
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
     this.abortController = new AbortController();
+    this.registryState = this.towerRegistry?.getState() || { towers: [], initialized: true, error: null };
+    this.selectedTowerId = "";
     this.records = [];
     this.invalidRowCount = 0;
     this.period = "day";
@@ -89,6 +97,7 @@ export class ListPage {
     this.filterTouched = false;
     this.pollingTimer = null;
     this.refreshPromise = null;
+    this.requestSequence = 0;
     this.elements = this.collectElements();
 
     this.initializePickers();
@@ -97,6 +106,11 @@ export class ListPage {
       this.batteryThresholds = this.settingsService.getBatteryThresholds();
       this.renderTable();
     }, { immediate: false });
+    this.unsubscribeTowerRegistry = this.towerRegistry?.subscribe(
+      (state) => this.handleTowerRegistryState(state),
+      { immediate: false }
+    );
+    this.syncRegisteredTowers();
     this.render();
   }
 
@@ -104,6 +118,7 @@ export class ListPage {
     const byId = (id) => this.document.getElementById(id);
     return {
       page: byId("listPage"),
+      towerSelect: byId("listTowerSelect"),
       filterTitle: byId("listFilterTitle"),
       filterDescription: byId("listFilterDescription"),
       picker: byId("listPicker"),
@@ -138,6 +153,7 @@ export class ListPage {
   }
 
   bindEvents() {
+    this.listen(this.elements.towerSelect, "change", (event) => this.changeTower(event.target.value));
     this.document.querySelectorAll("[data-list-period]").forEach((button) => {
       this.listen(button, "click", () => this.changePeriod(button.dataset.listPeriod));
     });
@@ -160,6 +176,10 @@ export class ListPage {
       return;
     }
     this.active = true;
+    if (!this.selectedTowerId) {
+      this.render();
+      return;
+    }
     if (this.refreshPromise) {
       void this.refreshPromise.finally(() => {
         if (this.active) {
@@ -174,7 +194,64 @@ export class ListPage {
   close() {
     this.active = false;
     this.clearPollingTimer();
+    this.cancelRefresh();
+  }
+
+  handleTowerRegistryState(state) {
+    this.registryState = state;
+    this.syncRegisteredTowers();
+  }
+
+  syncRegisteredTowers() {
+    const towers = this.registryState.towers || [];
+    const nextTowerId = resolveSelectedTowerId(towers, this.selectedTowerId);
+    const selectionChanged = nextTowerId !== this.selectedTowerId;
+    this.selectedTowerId = nextTowerId;
+    renderTowerSelect(this.document, this.elements.towerSelect, towers, this.selectedTowerId);
+
+    if (!selectionChanged) {
+      this.render();
+      return;
+    }
+
+    this.resetTowerData();
+    if (this.active && this.selectedTowerId) {
+      void this.refresh({ automatic: true });
+    } else {
+      this.render();
+    }
+  }
+
+  changeTower(towerId) {
+    const nextTowerId = resolveSelectedTowerId(this.registryState.towers || [], towerId);
+    if (!nextTowerId || nextTowerId === this.selectedTowerId) {
+      this.elements.towerSelect.value = this.selectedTowerId;
+      return;
+    }
+
+    this.selectedTowerId = nextTowerId;
+    this.resetTowerData();
+    this.render();
+    if (this.active) {
+      void this.refresh({ automatic: true });
+    }
+  }
+
+  cancelRefresh() {
+    this.requestSequence += 1;
     this.service.cancelActiveRequest();
+    this.refreshPromise = null;
+    this.loading = false;
+  }
+
+  resetTowerData() {
+    this.clearPollingTimer();
+    this.cancelRefresh();
+    this.records = [];
+    this.invalidRowCount = 0;
+    this.currentPage = 1;
+    this.error = null;
+    this.filterTouched = false;
   }
 
   changePeriod(period) {
@@ -248,18 +325,28 @@ export class ListPage {
   }
 
   async refresh({ automatic = false } = {}) {
+    if (!this.selectedTowerId) {
+      this.clearPollingTimer();
+      this.render();
+      return null;
+    }
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
 
+    const towerId = this.selectedTowerId;
+    const requestSequence = ++this.requestSequence;
     this.clearPollingTimer();
     this.loading = true;
     this.error = null;
     this.render();
 
-    this.refreshPromise = (async () => {
+    const refreshPromise = (async () => {
       try {
-        const result = await this.service.fetchReadings();
+        const result = await this.service.fetchReadings({ towerId });
+        if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
+          return;
+        }
         this.records = [...result.readings];
         this.invalidRowCount = result.invalidRows.length;
         const latestDate = getLatestReadingDate(this.records);
@@ -284,6 +371,13 @@ export class ListPage {
         if (error?.name === "AbortError") {
           return;
         }
+        if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
+          return;
+        }
+        if (error?.status === 404) {
+          this.records = [];
+          this.invalidRowCount = 0;
+        }
         const timedOut = error?.name === "TimeoutError";
         this.error = timedOut
           ? "The request timed out. The last valid readings were retained."
@@ -294,14 +388,20 @@ export class ListPage {
         }
         this.announce(this.error);
       } finally {
+        if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
+          return;
+        }
         this.loading = false;
-        this.refreshPromise = null;
+        if (this.refreshPromise === refreshPromise) {
+          this.refreshPromise = null;
+        }
         this.render();
         this.schedulePolling();
       }
     })();
 
-    return this.refreshPromise;
+    this.refreshPromise = refreshPromise;
+    return refreshPromise;
   }
 
   getFilteredReadings() {
@@ -320,7 +420,9 @@ export class ListPage {
     this.elements.filterDescription.textContent = copy.description;
     this.syncPickerValues();
     this.renderSortHeaders();
-    this.elements.refreshButton.disabled = this.loading;
+    this.elements.towerSelect.value = this.selectedTowerId;
+    this.elements.towerSelect.disabled = (this.registryState.towers || []).length === 0;
+    this.elements.refreshButton.disabled = this.loading || !this.selectedTowerId;
     this.elements.refreshButton.classList.toggle("is-loading", this.loading);
     this.renderError();
     this.renderTable();
@@ -338,7 +440,7 @@ export class ListPage {
   }
 
   renderError() {
-    this.elements.errorBanner.hidden = !this.error;
+    this.elements.errorBanner.hidden = !this.error || !this.selectedTowerId;
     if (this.error) {
       this.elements.errorMessage.textContent = this.error;
     }
@@ -378,7 +480,15 @@ export class ListPage {
     const filtered = this.getFilteredReadings();
     const pageData = paginateSensorReadings(filtered, this.currentPage, this.config.pageSize);
     this.currentPage = pageData.page;
-    this.elements.exportButton.disabled = this.loading || filtered.length === 0;
+    this.elements.exportButton.disabled = this.loading || !this.selectedTowerId || filtered.length === 0;
+
+    if (!this.selectedTowerId) {
+      this.elements.tableBody.replaceChildren(
+        this.createStateRow("empty", NO_TOWERS_MESSAGE)
+      );
+      this.renderPagination(0, pageData);
+      return;
+    }
 
     if (this.loading && this.records.length === 0) {
       this.elements.tableBody.replaceChildren(
@@ -502,6 +612,9 @@ export class ListPage {
   }
 
   exportFilteredData() {
+    if (!this.selectedTowerId) {
+      return;
+    }
     const readings = this.getFilteredReadings();
     if (!readings.length) {
       this.onToast("No filtered sensor data is available to export.", "warning");
@@ -516,7 +629,7 @@ export class ListPage {
     try {
       downloadSensorDataWorkbook(
         readings,
-        `sensor-data-${this.period}-${periodValue}.xlsx`,
+        `sensor-data-${this.selectedTowerId}-${this.period}-${periodValue}.xlsx`,
         this.document
       );
       this.onToast(`${readings.length} filtered readings exported to .xlsx.`, "info");
@@ -528,7 +641,7 @@ export class ListPage {
 
   schedulePolling() {
     this.clearPollingTimer();
-    if (!this.active) {
+    if (!this.active || !this.selectedTowerId) {
       return;
     }
     this.pollingTimer = this.window.setTimeout(() => {
@@ -549,7 +662,7 @@ export class ListPage {
   }
 
   handleVisibilityChange() {
-    if (!this.active) {
+    if (!this.active || !this.selectedTowerId) {
       return;
     }
     if (this.document.hidden) {
@@ -572,6 +685,7 @@ export class ListPage {
     this.close();
     this.abortController.abort();
     this.unsubscribeSettings?.();
+    this.unsubscribeTowerRegistry?.();
     this.service.destroy();
   }
 }

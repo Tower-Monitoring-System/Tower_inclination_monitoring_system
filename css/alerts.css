@@ -234,7 +234,7 @@
 
 .alerts-toolbar {
   display: grid;
-  grid-template-columns: minmax(210px, 1fr) 145px auto 145px auto;
+  grid-template-columns: minmax(150px, 1fr) minmax(175px, 0.8fr) 135px auto 135px auto;
   align-items: end;
   gap: 13px;
   padding: 18px 22px;

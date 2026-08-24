@@ -257,6 +257,46 @@
   opacity: 0.7;
 }
 
+.tower-select-control {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.59rem;
+  font-weight: 750;
+}
+
+.tower-select-control select {
+  width: 100%;
+  min-width: 0;
+  height: 42px;
+  padding: 0 32px 0 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  outline: 0;
+  overflow: hidden;
+  color: #344b67;
+  background: #fff;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.tower-select-control select:focus-visible {
+  border-color: #8eb9ee;
+  box-shadow: 0 0 0 3px rgba(31, 115, 237, 0.1);
+}
+
+.tower-select-control select:disabled {
+  color: #8796a8;
+  background: #f4f7fa;
+  cursor: not-allowed;
+}
+
 .status-dot {
   display: inline-block;
   flex: 0 0 auto;

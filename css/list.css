@@ -17,11 +17,15 @@
 
 .list-toolbar {
   display: grid;
-  grid-template-columns: minmax(190px, 1fr) auto minmax(220px, 360px) auto;
+  grid-template-columns: minmax(155px, 0.8fr) minmax(175px, 0.75fr) auto minmax(220px, 340px) auto;
   align-items: center;
   gap: 18px;
   padding: 22px 24px;
   border-bottom: 1px solid var(--border);
+}
+
+.list-tower-control {
+  align-self: end;
 }
 
 .list-filter-copy {
@@ -499,6 +503,10 @@
 
   .list-filter-copy {
     grid-column: 1 / -1;
+  }
+
+  .list-tower-control {
+    align-self: stretch;
   }
 
   .list-period-tabs button {
