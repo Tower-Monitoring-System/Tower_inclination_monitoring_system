@@ -1,4 +1,4 @@
-import { Dashboard } from "./components/Dashboard.js?v=20260824.2";
+import { Dashboard } from "./components/Dashboard.js?v=20260824.3";
 import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js";
 import {
   CONNECTION_STATUS,
@@ -6,8 +6,8 @@ import {
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
-import { AlertsPage } from "./pages/alertsPage.js?v=20260824.1";
-import { ListPage } from "./pages/listPage.js?v=20260824.1";
+import { AlertsPage } from "./pages/alertsPage.js?v=20260824.2";
+import { ListPage } from "./pages/listPage.js?v=20260824.2";
 import { TowersPage } from "./pages/towersPage.js?v=20260824.1";
 import { AlertService } from "./services/alertService.js?v=20260824.1";
 import { ApiService } from "./services/apiService.js";
@@ -251,7 +251,9 @@ async function bootstrap() {
     const alertsSensorDataService = new SensorDataService();
     const alertService = new AlertService(alertsSensorDataService);
     alertsPage = new AlertsPage(alertService, {
-      onToast: (message, type) => dashboard.showToast(message, type)
+      onToast: (message, type) => dashboard.showToast(message, type),
+      onSummaryChange: (summary) => dashboard.updateAlertSummary(summary),
+      monitorWhenInactive: true
     });
     towersPage = new TowersPage(store.asReadonly(), {
       onRefresh: () => refreshDashboard({ automatic: false }),
@@ -273,8 +275,12 @@ async function bootstrap() {
     startAutoRefresh();
     window.addEventListener("pagehide", handlePageHide);
 
+    const initialAlertRefresh = alertsPage.refresh({ automatic: true });
     mqttService.connect().catch((error) => window.console.warn("MQTT initialization failed.", error));
-    await refreshDashboard({ initial: true });
+    await Promise.all([
+      refreshDashboard({ initial: true }),
+      initialAlertRefresh
+    ]);
   } catch (error) {
     window.console.error("Dashboard initialization failed.", error);
     if (!authService?.identity) {

@@ -2,7 +2,8 @@
 
 .page-view[hidden],
 .list-error-banner[hidden],
-[data-list-picker][hidden] {
+[data-list-picker][hidden],
+.list-custom-pickers[hidden] {
   display: none;
 }
 
@@ -16,7 +17,7 @@
 
 .list-toolbar {
   display: grid;
-  grid-template-columns: minmax(210px, 1fr) auto minmax(220px, 260px) auto;
+  grid-template-columns: minmax(190px, 1fr) auto minmax(220px, 360px) auto;
   align-items: center;
   gap: 18px;
   padding: 22px 24px;
@@ -117,6 +118,37 @@
   font-size: 0.74rem;
   font-weight: 650;
   color-scheme: light;
+}
+
+.list-custom-pickers {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.list-custom-pickers label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.list-custom-pickers label + label {
+  padding-left: 8px;
+  border-left: 1px solid var(--border);
+}
+
+.list-custom-pickers span {
+  color: var(--muted-light);
+  font-size: 0.54rem;
+  font-weight: 750;
+}
+
+.list-custom-pickers input {
+  font-size: 0.62rem;
 }
 
 .list-actions {
@@ -460,7 +492,7 @@
   background: transparent;
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1300px) {
   .list-toolbar {
     grid-template-columns: 1fr 1fr;
   }
@@ -471,6 +503,10 @@
 
   .list-period-tabs button {
     flex: 1;
+    min-width: 0;
+  }
+
+  .list-picker.is-custom {
     min-width: 0;
   }
 

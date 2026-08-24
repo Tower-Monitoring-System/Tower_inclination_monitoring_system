@@ -49,6 +49,10 @@
   font-weight: 850;
 }
 
+.notification-button > span[hidden] {
+  display: none;
+}
+
 .account-menu-wrap {
   position: relative;
 }
@@ -614,4 +618,3 @@
   background: var(--danger);
   box-shadow: 0 0 0 4px rgba(237, 53, 72, 0.12);
 }
-

@@ -61,6 +61,10 @@ export class AlertsPage {
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
+    this.onSummaryChange = typeof options.onSummaryChange === "function"
+      ? options.onSummaryChange
+      : () => {};
+    this.monitorWhenInactive = options.monitorWhenInactive === true;
     this.abortController = new AbortController();
     this.alerts = [];
     this.summary = summarizeAlerts([]);
@@ -141,11 +145,6 @@ export class AlertsPage {
     }
     this.active = true;
     if (this.refreshPromise) {
-      void this.refreshPromise.finally(() => {
-        if (this.active) {
-          void this.refresh({ automatic: this.alerts.length > 0 });
-        }
-      });
       return;
     }
     void this.refresh({ automatic: this.alerts.length > 0 });
@@ -153,8 +152,12 @@ export class AlertsPage {
 
   close() {
     this.active = false;
-    this.clearPollingTimer();
-    this.service.cancelActiveRequest();
+    if (this.monitorWhenInactive) {
+      this.schedulePolling();
+    } else {
+      this.clearPollingTimer();
+      this.service.cancelActiveRequest();
+    }
     this.renderPollingStatus();
   }
 
@@ -173,6 +176,7 @@ export class AlertsPage {
         const result = await this.service.fetchAlerts();
         this.alerts = [...result.alerts];
         this.summary = result.summary || summarizeAlerts(this.alerts);
+        this.onSummaryChange(this.summary);
         this.lastUpdatedAt = Date.parse(result.meta?.generatedAt) || Date.now();
         this.error = null;
 
@@ -488,7 +492,7 @@ export class AlertsPage {
 
   schedulePolling() {
     this.clearPollingTimer();
-    if (!this.active) {
+    if (!this.active && !this.monitorWhenInactive) {
       this.renderPollingStatus();
       return;
     }
@@ -516,8 +520,10 @@ export class AlertsPage {
     }
     if (this.loading) {
       this.elements.pollingStatus.textContent = "Checking for new sensor events…";
-    } else if (!this.active) {
+    } else if (!this.active && !this.monitorWhenInactive) {
       this.elements.pollingStatus.textContent = "Updates resume when this page is open";
+    } else if (!this.active) {
+      this.elements.pollingStatus.textContent = "Background alert monitoring is active";
     } else if (this.document.hidden) {
       this.elements.pollingStatus.textContent = "Updates paused while this tab is hidden";
     } else {
@@ -527,7 +533,7 @@ export class AlertsPage {
   }
 
   handleVisibilityChange() {
-    if (!this.active) {
+    if (!this.active && !this.monitorWhenInactive) {
       return;
     }
     if (this.document.hidden) {
@@ -548,6 +554,7 @@ export class AlertsPage {
   }
 
   destroy() {
+    this.monitorWhenInactive = false;
     this.close();
     this.abortController.abort();
     this.service.destroy();

@@ -1,6 +1,6 @@
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const TIME_PATTERN = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
-const PERIODS = new Set(["day", "month"]);
+const PERIODS = new Set(["day", "month", "custom"]);
 const SORT_FIELDS = new Set(["date", "time"]);
 const SORT_DIRECTIONS = new Set(["ascending", "descending"]);
 
@@ -126,11 +126,31 @@ export function normalizeSensorListPayload(payload, maximumRecords = 20000) {
 }
 
 export function filterSensorReadings(readings, period, selectedValue) {
-  if (!Array.isArray(readings) || !PERIODS.has(period) || typeof selectedValue !== "string") {
+  if (!Array.isArray(readings) || !PERIODS.has(period)) {
     return [];
   }
 
-  const prefixLength = period === "day" ? 10 : period === "month" ? 7 : 4;
+  if (period === "custom") {
+    if (!selectedValue || typeof selectedValue !== "object") {
+      return [];
+    }
+
+    try {
+      const from = normalizeDate(selectedValue.from).value;
+      const to = normalizeDate(selectedValue.to).value;
+      if (from > to) {
+        return [];
+      }
+      return readings.filter((reading) => reading.date >= from && reading.date <= to);
+    } catch {
+      return [];
+    }
+  }
+
+  if (typeof selectedValue !== "string") {
+    return [];
+  }
+  const prefixLength = period === "day" ? 10 : 7;
   const prefix = selectedValue.slice(0, prefixLength);
   if (prefix.length !== prefixLength) {
     return [];

@@ -1,6 +1,6 @@
 import { APP_CONFIG } from "../core/config.js";
 import { CONNECTION_STATUS, DASHBOARD_ACTION } from "../core/constants.js";
-import { AlertPanel } from "./AlertPanel.js";
+import { AlertPanel } from "./AlertPanel.js?v=20260824.1";
 
 export class Dashboard extends EventTarget {
   constructor(readonlyStore, options = {}) {
@@ -134,7 +134,6 @@ export class Dashboard extends EventTarget {
   render(state) {
     this.renderSafely("Summary", () => this.renderSummary(state.summary));
     this.renderSafely("Connection status", () => this.renderConnectionStatus(state.connectionStatus));
-    this.renderSafely("Alert panel", () => this.alertPanel.render(state.alerts, state.summary));
 
     if (state.stations.length) {
       this.reveal();
@@ -159,6 +158,10 @@ export class Dashboard extends EventTarget {
     }
 
     this.setText("sidebarTowerCount", summary.totalTowers);
+  }
+
+  updateAlertSummary(summary) {
+    this.renderSafely("Alert indicators", () => this.alertPanel.render(summary));
   }
 
   renderConnectionStatus(connectionStatus = {}) {

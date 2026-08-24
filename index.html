@@ -8,9 +8,9 @@
   <title>Tower Monitoring | Tower Inclination Monitoring System</title>
   <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="./css/global.css?v=20260823.2" />
-  <link rel="stylesheet" href="./css/components.css?v=20260823.13" />
-  <link rel="stylesheet" href="./css/dashboard.css?v=20260823.13" />
-  <link rel="stylesheet" href="./css/list.css?v=20260823.2" />
+  <link rel="stylesheet" href="./css/components.css?v=20260824.14" />
+  <link rel="stylesheet" href="./css/dashboard.css?v=20260824.14" />
+  <link rel="stylesheet" href="./css/list.css?v=20260824.4" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.1" />
   <link rel="stylesheet" href="./css/towers.css?v=20260824.1" />
 </head>
@@ -109,7 +109,7 @@
         <button class="nav-item" type="button" data-nav-target="Alerts">
           <svg aria-hidden="true"><use href="#icon-alert"></use></svg>
           <span>Alerts</span>
-          <small class="nav-alert-count" id="sidebarAlertCount">0</small>
+          <small class="nav-alert-count" id="sidebarAlertCount" hidden>0</small>
         </button>
         <button class="nav-item" type="button" data-nav-target="System settings">
           <svg aria-hidden="true"><use href="#icon-settings"></use></svg>
@@ -164,7 +164,7 @@
         <div class="topbar-actions">
           <button class="icon-button notification-button" id="notificationButton" type="button" aria-label="View 0 active notifications">
             <svg aria-hidden="true"><use href="#icon-bell"></use></svg>
-            <span id="notificationCount">0</span>
+            <span id="notificationCount" hidden>0</span>
           </button>
           <div class="account-menu-wrap">
             <button class="account-button" id="accountButton" type="button" aria-haspopup="menu" aria-expanded="false">
@@ -360,14 +360,19 @@
               <div class="list-period-tabs" role="group" aria-label="Sensor data period">
                 <button type="button" class="is-active" data-list-period="day" aria-pressed="true">Day</button>
                 <button type="button" data-list-period="month" aria-pressed="false">Month</button>
+                <button type="button" data-list-period="custom" aria-pressed="false">Custom</button>
               </div>
 
-              <div class="list-picker" aria-label="Selected sensor data period">
+              <div class="list-picker" id="listPicker" aria-label="Selected sensor data period">
                 <svg aria-hidden="true"><use href="#icon-calendar"></use></svg>
                 <label class="sr-only" for="listDayPicker">Select day</label>
                 <input id="listDayPicker" type="date" data-list-picker="day" />
                 <label class="sr-only" for="listMonthPicker">Select month</label>
                 <input id="listMonthPicker" type="month" data-list-picker="month" hidden />
+                <div class="list-custom-pickers" id="listCustomPickers" hidden>
+                  <label><span>From</span><input id="listCustomStart" type="date" /></label>
+                  <label><span>To</span><input id="listCustomEnd" type="date" /></label>
+                </div>
               </div>
 
               <div class="list-actions">
@@ -537,6 +542,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.5"></script>
+  <script type="module" src="./js/app.js?v=20260824.6"></script>
 </body>
 </html>

@@ -3,49 +3,58 @@ export class AlertPanel {
     this.elements = {
       sidebarAlertCount: documentRef.getElementById("sidebarAlertCount"),
       notificationCount: documentRef.getElementById("notificationCount"),
-      notificationButton: documentRef.getElementById("notificationButton"),
-      normalTowerCount: documentRef.getElementById("normalTowerCount"),
-      warningTowerCount: documentRef.getElementById("warningTowerCount"),
-      criticalTowerCount: documentRef.getElementById("criticalTowerCount"),
-      offlineRankingCount: documentRef.getElementById("offlineRankingCount")
+      notificationButton: documentRef.getElementById("notificationButton")
     };
-    this.alerts = [];
-    this.statusCounts = { normal: 0, warning: 0, alert: 0, offline: 0 };
+    this.activeCounts = { battery: 0, inclination: 0, total: 0 };
+    this.render();
   }
 
-  setText(element, value) {
-    if (element) {
-      element.textContent = String(value);
+  normalizeCount(value) {
+    const count = Number(value);
+    return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+  }
+
+  updateBadge(element, count) {
+    if (!element) {
+      return;
     }
+    element.textContent = String(count);
+    element.hidden = count === 0;
   }
 
-  render(alerts = [], summary = {}) {
-    const safeSummary = summary || {};
-    this.alerts = alerts;
-    this.statusCounts = safeSummary.statusCounts || this.statusCounts;
-    const notificationCount = safeSummary.notificationCount ?? alerts.length;
+  render(summary = {}) {
+    const battery = this.normalizeCount(summary?.battery);
+    const inclination = this.normalizeCount(summary?.inclination);
+    const total = battery + inclination;
+    this.activeCounts = { battery, inclination, total };
 
-    this.setText(this.elements.sidebarAlertCount, notificationCount);
-    this.setText(this.elements.notificationCount, notificationCount);
-    this.setText(this.elements.normalTowerCount, this.statusCounts.normal);
-    this.setText(this.elements.warningTowerCount, this.statusCounts.warning);
-    this.setText(this.elements.criticalTowerCount, this.statusCounts.alert);
-    this.setText(this.elements.offlineRankingCount, this.statusCounts.offline);
+    this.updateBadge(this.elements.sidebarAlertCount, total);
+    this.updateBadge(this.elements.notificationCount, total);
 
     if (this.elements.notificationButton) {
       this.elements.notificationButton.setAttribute(
         "aria-label",
-        `View ${notificationCount} active notifications`
+        total === 0
+          ? "No active notifications"
+          : `View ${total} active notification${total === 1 ? "" : "s"}`
       );
     }
   }
 
   getNotificationSummary() {
-    const { alert = 0, warning = 0, offline = 0 } = this.statusCounts;
-    const offlineText = offline ? ` ${offline} tower is offline.` : "";
+    const { battery, inclination, total } = this.activeCounts;
+    const categories = [];
+    if (battery > 0) {
+      categories.push(`${battery} battery`);
+    }
+    if (inclination > 0) {
+      categories.push(`${inclination} inclination`);
+    }
     return {
-      message: `${alert} alert and ${warning} warning towers need review.${offlineText}`,
-      type: alert || offline ? "warning" : "info"
+      message: total === 0
+        ? "No active battery or inclination alerts."
+        : `${categories.join(" and ")} active alert${total === 1 ? "" : "s"} need review.`,
+      type: total > 0 ? "warning" : "info"
     };
   }
 }

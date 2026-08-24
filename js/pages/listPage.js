@@ -15,6 +15,10 @@ const PERIOD_COPY = Object.freeze({
   month: Object.freeze({
     title: "View by month",
     description: "Select a month to review all readings recorded in that month"
+  }),
+  custom: Object.freeze({
+    title: "View by custom range",
+    description: "Select a From and To date to review sensor data within that range"
   })
 });
 
@@ -23,6 +27,13 @@ function localIsoDate(date = new Date()) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function shiftIsoDate(value, dayOffset) {
+  const [year, month, day] = String(value).split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + dayOffset);
+  return date.toISOString().slice(0, 10);
 }
 
 function formatDisplayDate(value) {
@@ -66,6 +77,8 @@ export class ListPage {
     this.sortDirection = "descending";
     this.currentPage = 1;
     this.selectedDate = localIsoDate();
+    this.customStart = shiftIsoDate(this.selectedDate, -2);
+    this.customEnd = this.selectedDate;
     this.loading = false;
     this.error = null;
     this.active = false;
@@ -85,8 +98,12 @@ export class ListPage {
       page: byId("listPage"),
       filterTitle: byId("listFilterTitle"),
       filterDescription: byId("listFilterDescription"),
+      picker: byId("listPicker"),
       dayPicker: byId("listDayPicker"),
       monthPicker: byId("listMonthPicker"),
+      customPickers: byId("listCustomPickers"),
+      customStart: byId("listCustomStart"),
+      customEnd: byId("listCustomEnd"),
       refreshButton: byId("listRefreshButton"),
       exportButton: byId("listExportButton"),
       errorBanner: byId("listErrorBanner"),
@@ -108,6 +125,8 @@ export class ListPage {
   initializePickers() {
     this.elements.dayPicker.value = this.selectedDate;
     this.elements.monthPicker.value = this.selectedDate.slice(0, 7);
+    this.elements.customStart.value = this.customStart;
+    this.elements.customEnd.value = this.customEnd;
   }
 
   bindEvents() {
@@ -117,6 +136,8 @@ export class ListPage {
     this.document.querySelectorAll("[data-list-picker]").forEach((picker) => {
       this.listen(picker, "change", () => this.changeSelectedPeriod(picker.value));
     });
+    this.listen(this.elements.customStart, "change", () => this.changeCustomRange());
+    this.listen(this.elements.customEnd, "change", () => this.changeCustomRange());
     this.document.querySelectorAll("[data-list-sort]").forEach((button) => {
       this.listen(button, "click", () => this.changeSort(button.dataset.listSort));
     });
@@ -160,7 +181,7 @@ export class ListPage {
   }
 
   changeSelectedPeriod(value) {
-    if (typeof value !== "string" || !value) {
+    if (!["day", "month"].includes(this.period) || typeof value !== "string" || !value) {
       return;
     }
 
@@ -171,9 +192,29 @@ export class ListPage {
     this.render();
   }
 
+  changeCustomRange() {
+    const start = this.elements.customStart.value;
+    const end = this.elements.customEnd.value;
+    if (!start || !end) {
+      return;
+    }
+
+    this.customStart = start <= end ? start : end;
+    this.customEnd = start <= end ? end : start;
+    this.currentPage = 1;
+    this.filterTouched = true;
+    this.render();
+  }
+
   syncPickerValues() {
     this.elements.dayPicker.value = this.selectedDate;
     this.elements.monthPicker.value = this.selectedDate.slice(0, 7);
+    this.elements.customStart.value = this.customStart;
+    this.elements.customEnd.value = this.customEnd;
+    this.elements.customStart.max = this.customEnd;
+    this.elements.customEnd.min = this.customStart;
+    this.elements.customPickers.hidden = this.period !== "custom";
+    this.elements.picker.classList.toggle("is-custom", this.period === "custom");
     this.document.querySelectorAll("[data-list-picker]").forEach((picker) => {
       picker.hidden = picker.dataset.listPicker !== this.period;
     });
@@ -216,6 +257,8 @@ export class ListPage {
         const latestDate = getLatestReadingDate(this.records);
         if (!this.filterTouched && latestDate) {
           this.selectedDate = latestDate;
+          this.customEnd = latestDate;
+          this.customStart = shiftIsoDate(latestDate, -2);
         }
         this.syncPickerValues();
         this.error = null;
@@ -254,9 +297,11 @@ export class ListPage {
   }
 
   getFilteredReadings() {
-    const selectedValue = this.period === "day"
-      ? this.selectedDate
-      : this.selectedDate.slice(0, 7);
+    const selectedValue = this.period === "custom"
+      ? { from: this.customStart, to: this.customEnd }
+      : this.period === "day"
+        ? this.selectedDate
+        : this.selectedDate.slice(0, 7);
     const filtered = filterSensorReadings(this.records, this.period, selectedValue);
     return sortSensorReadings(filtered, this.sortField, this.sortDirection);
   }
@@ -352,8 +397,9 @@ export class ListPage {
     }
 
     if (filtered.length === 0) {
+      const periodLabel = this.period === "custom" ? "date range" : this.period;
       this.elements.tableBody.replaceChildren(
-        this.createStateRow("empty", `No readings found for this ${this.period}`, "Choose another period or refresh after new data is added.")
+        this.createStateRow("empty", `No readings found for this ${periodLabel}`, "Choose another period or refresh after new data is added.")
       );
       this.renderPagination(filtered.length, pageData);
       return;
@@ -454,9 +500,11 @@ export class ListPage {
       return;
     }
 
-    const periodValue = this.period === "day"
-      ? this.selectedDate
-      : this.selectedDate.slice(0, 7);
+    const periodValue = this.period === "custom"
+      ? `${this.customStart}-to-${this.customEnd}`
+      : this.period === "day"
+        ? this.selectedDate
+        : this.selectedDate.slice(0, 7);
     try {
       downloadSensorDataWorkbook(
         readings,
