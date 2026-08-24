@@ -103,6 +103,7 @@ export class TowersPage {
       emptyTitle: byId("towerEmptyTitle"),
       emptyDescription: byId("towerEmptyDescription"),
       content: byId("towerMonitoringContent"),
+      trendCount: byId("towerTrendCount"),
       trendLoading: byId("towerTrendLoading"),
       vectorLoading: byId("towerVectorLoading"),
       vectorX: byId("towerVectorX"),
