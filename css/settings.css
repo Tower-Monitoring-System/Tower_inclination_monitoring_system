@@ -52,6 +52,8 @@
 }
 
 .settings-wifi-card {
+  display: flex;
+  flex-direction: column;
   height: 100%;
 }
 
@@ -290,18 +292,19 @@
 
 .tower-management-table th,
 .tower-management-table td {
-  padding: 10px 11px;
+  padding: 10px 8px;
   border-bottom: 1px solid var(--border);
   text-align: left;
   vertical-align: middle;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.tower-management-table th:nth-child(1) { width: 17%; }
-.tower-management-table th:nth-child(2) { width: 18%; }
-.tower-management-table th:nth-child(3) { width: 28%; }
-.tower-management-table th:nth-child(4) { width: 25%; }
-.tower-management-table th:nth-child(5) { width: 12%; }
+.tower-management-table th:nth-child(1) { width: 14%; }
+.tower-management-table th:nth-child(2) { width: 16%; }
+.tower-management-table th:nth-child(3) { width: 31%; }
+.tower-management-table th:nth-child(4) { width: 24%; }
+.tower-management-table th:nth-child(5) { width: 15%; }
 
 .tower-management-table th {
   color: #4c6078;
@@ -325,8 +328,16 @@
   white-space: nowrap;
 }
 
+.tower-management-table td:nth-child(2),
+.tower-management-table td:nth-child(3),
 .tower-management-table td:nth-child(4) {
-  white-space: normal;
+  white-space: nowrap;
+}
+
+.tower-management-table th:last-child,
+.tower-management-table td:last-child {
+  padding-right: 6px;
+  padding-left: 6px;
 }
 
 .tower-management-empty-row td {
@@ -338,14 +349,15 @@
 .tower-management-actions {
   display: flex;
   align-items: center;
-  gap: 5px;
+  justify-content: center;
+  gap: 4px;
 }
 
 .tower-management-actions button {
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 27px;
+  height: 27px;
   padding: 0;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -608,6 +620,9 @@
 }
 
 .settings-ap-section {
+  display: grid;
+  flex: 1;
+  grid-template-rows: auto auto minmax(64px, 1fr);
   margin-top: 20px;
   padding-top: 19px;
   border-top: 1px solid var(--border);
@@ -615,10 +630,16 @@
 
 .settings-ap-grid {
   display: grid;
-  grid-template-columns: 0.7fr 1fr 1fr auto;
-  align-items: end;
-  gap: 12px;
-  margin-top: 14px;
+  grid-template-columns: minmax(140px, 0.85fr) minmax(0, 1.15fr);
+  align-items: start;
+  gap: 18px 20px;
+  margin-top: 20px;
+}
+
+.settings-ap-grid > button {
+  align-self: end;
+  width: 100%;
+  min-height: 42px;
 }
 
 .settings-ap-status {
@@ -646,8 +667,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  width: min(300px, 100%);
-  margin: 14px auto 0;
+  align-self: end;
+  width: 100%;
+  margin: 24px 0 0;
   padding: 9px 15px;
   border: 1px solid var(--primary);
   border-radius: 9px;
@@ -793,7 +815,7 @@
 
   .tower-management-table {
     min-width: 560px;
-    table-layout: auto;
+    table-layout: fixed;
   }
 
   .settings-network-column + .settings-network-column {

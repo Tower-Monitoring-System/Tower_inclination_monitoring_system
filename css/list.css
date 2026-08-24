@@ -13,23 +13,34 @@
   border-radius: 16px;
   background: var(--surface);
   box-shadow: var(--shadow-md);
+  container-name: list-panel;
+  container-type: inline-size;
 }
 
 .list-toolbar {
   display: grid;
-  grid-template-columns: minmax(155px, 0.8fr) minmax(175px, 0.75fr) auto minmax(220px, 340px) auto;
-  align-items: center;
-  gap: 18px;
+  grid-template-areas: "copy tower periods picker actions";
+  grid-template-columns:
+    minmax(150px, 0.72fr)
+    minmax(170px, 0.82fr)
+    minmax(204px, 0.86fr)
+    minmax(300px, 1.55fr)
+    max-content;
+  align-items: end;
+  gap: clamp(10px, 1vw, 18px);
   padding: 22px 24px;
   border-bottom: 1px solid var(--border);
 }
 
 .list-tower-control {
+  grid-area: tower;
   align-self: end;
 }
 
 .list-filter-copy {
   display: grid;
+  grid-area: copy;
+  align-self: center;
   gap: 6px;
 }
 
@@ -46,6 +57,9 @@
 
 .list-period-tabs {
   display: flex;
+  grid-area: periods;
+  width: 100%;
+  min-width: 0;
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 9px;
@@ -53,9 +67,10 @@
 }
 
 .list-period-tabs button {
-  min-width: 78px;
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 40px;
-  padding: 8px 15px;
+  padding: 8px 10px;
   border: 0;
   border-right: 1px solid var(--border);
   color: #53647a;
@@ -82,9 +97,12 @@
 
 .list-picker {
   display: grid;
+  grid-area: picker;
   grid-template-columns: 21px minmax(0, 1fr);
   align-items: center;
   gap: 9px;
+  width: 100%;
+  min-width: 0;
   min-height: 42px;
   padding: 5px 11px;
   border: 1px solid var(--border-strong);
@@ -157,6 +175,8 @@
 
 .list-actions {
   display: flex;
+  grid-area: actions;
+  align-self: end;
   justify-content: flex-end;
   gap: 9px;
 }
@@ -496,48 +516,59 @@
   background: transparent;
 }
 
-@media (max-width: 1300px) {
+@container list-panel (max-width: 1180px) {
   .list-toolbar {
-    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "copy copy copy"
+      "tower periods picker"
+      "actions actions actions";
+    grid-template-columns: minmax(180px, 0.85fr) minmax(210px, 1fr) minmax(280px, 1.45fr);
   }
 
   .list-filter-copy {
-    grid-column: 1 / -1;
-  }
-
-  .list-tower-control {
-    align-self: stretch;
-  }
-
-  .list-period-tabs button {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .list-picker.is-custom {
-    min-width: 0;
+    align-self: start;
   }
 
   .list-actions {
-    grid-column: 1 / -1;
+    width: 100%;
   }
 }
 
-@media (max-width: 760px) {
+@container list-panel (max-width: 820px) {
   .list-toolbar {
+    grid-template-areas:
+      "copy copy"
+      "tower periods"
+      "picker picker"
+      "actions actions";
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .list-picker,
+  .list-actions {
+    width: 100%;
+  }
+}
+
+@container list-panel (max-width: 560px) {
+  .list-toolbar {
+    grid-template-areas:
+      "copy"
+      "tower"
+      "periods"
+      "picker"
+      "actions";
     grid-template-columns: 1fr;
     gap: 13px;
     padding: 18px 15px;
   }
 
-  .list-filter-copy,
-  .list-actions {
-    grid-column: auto;
-  }
-
   .list-actions > button {
     flex: 1;
   }
+}
+
+@media (max-width: 760px) {
 
   .list-error-banner {
     grid-template-columns: 28px minmax(0, 1fr);
@@ -567,7 +598,6 @@
     overflow-x: auto;
     padding-bottom: 3px;
   }
-
 }
 
 @media (max-width: 480px) {

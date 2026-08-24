@@ -390,6 +390,7 @@ export class SettingsPage {
         [tower.id, tower.name, tower.location, ADDED_AT_FORMAT.format(new Date(tower.addedAt))].forEach((value) => {
           const cell = this.document.createElement("td");
           cell.textContent = value;
+          cell.title = String(value);
           row.append(cell);
         });
         const actionsCell = this.document.createElement("td");

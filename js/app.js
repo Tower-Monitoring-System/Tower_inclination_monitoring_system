@@ -8,7 +8,7 @@ import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
 import { AlertsPage } from "./pages/alertsPage.js?v=20260824.3";
 import { ListPage } from "./pages/listPage.js?v=20260824.3";
-import { SettingsPage } from "./pages/settingsPage.js?v=20260824.2";
+import { SettingsPage } from "./pages/settingsPage.js?v=20260824.3";
 import { TowersPage } from "./pages/towersPage.js?v=20260824.4";
 import { AlertService } from "./services/alertService.js?v=20260824.3";
 import { ApiService } from "./services/apiService.js";
