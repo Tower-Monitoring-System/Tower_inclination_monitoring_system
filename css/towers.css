@@ -228,6 +228,16 @@
   white-space: nowrap;
 }
 
+.selected-tower-content .tower-selected-battery {
+  color: #4f6682;
+  font-size: 0.56rem;
+}
+
+.selected-tower-content .tower-selected-battery b {
+  color: #16875b;
+  font-variant-numeric: tabular-nums;
+}
+
 .selected-tower-content b {
   color: #40536b;
 }

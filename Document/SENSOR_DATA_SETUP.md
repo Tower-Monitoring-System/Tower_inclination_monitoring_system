@@ -11,6 +11,8 @@ The browser never receives the Apps Script URL or the shared secret.
 
 ## 1. Prepare Google Sheets
 
+Create one Sheet tab for each Tower. The tab name must exactly match the Tower ID entered in **System Settings → Tower Management**. For example, Tower ID `TWR-01` reads only the tab named `TWR-01`.
+
 Create a header row containing these six columns (capitalization is not important):
 
 ```text
@@ -37,7 +39,7 @@ https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit
    | Property | Value |
    | --- | --- |
    | `SENSOR_SHEET_ID` | Google spreadsheet ID |
-   | `SENSOR_SHEET_NAME` | Sheet tab name; optional, first tab is used when omitted |
+   | `SENSOR_SHEET_NAME` | Optional fallback tab used by existing List/Alerts requests that do not select a Tower |
    | `SENSOR_DATA_SHARED_SECRET` | Random secret of at least 32 bytes |
 
 3. Create the secret with a cryptographically secure password generator. Use exactly the same value later in Supabase. Do not paste it into source code or commit it.
@@ -87,17 +89,19 @@ The frontend configuration is in `js/core/config.js` under `SENSOR_DATA_CONFIG`:
 - `pageSize`: rows displayed on each page.
 - Battery warning/critical voltage thresholds.
 
+The Towers page sends its selected `towerId` in the authenticated request. Do not put a Tower ID or Sheet name in frontend source code. The Tower Registry is persisted through `towerRegistryRepository.js` and is the only source for the Towers selector.
+
 Do not add the Apps Script URL or shared secret to this file. The existing public Supabase URL and publishable key remain in `js/core/supabaseConfig.js`.
 
 ## 5. Verify the complete flow
 
 1. Sign in with an account whose profile role is `owner` or `operator`.
-2. Open **List** in the sidebar.
-3. Confirm the Sheet rows appear and Day/Month/Year filtering, Date/Time sorting, pagination, and `.xlsx` export work.
-4. Add a valid row to Google Sheets.
-5. Click **Refresh** or wait for the next polling cycle. The new row must appear without changing source code.
-6. Temporarily disable the Apps Script deployment and confirm the List page shows an error while retaining the last valid readings.
-7. Navigate back to **Overview** and confirm List polling stops.
+2. In **System Settings → Tower Management**, add a Tower whose ID exactly matches an existing Sheet tab.
+3. Open **Towers**, select that Tower, and confirm its X/Y/Z/Battery data appears in the current values and both charts.
+4. Add a second Tower with a matching Sheet tab and confirm switching Select Tower changes the complete data set.
+5. Add a Tower whose Sheet tab does not exist and confirm the UI reports `No Google Sheet found for Tower ...` without crashing.
+6. Open **List** and confirm Day/Month/Custom filtering, Date/Time sorting, pagination, and `.xlsx` export still work through the fallback Sheet configuration.
+7. Temporarily disable the Apps Script deployment and confirm the pages show a connection error while retaining the last valid readings.
 
 ## Security checklist
 

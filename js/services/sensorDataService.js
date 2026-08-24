@@ -18,22 +18,35 @@ export class SensorDataService {
     this.fetchImpl = options.fetchImpl || window.fetch.bind(window);
     this.activeRequest = null;
     this.activeController = null;
+    this.activeRequestKey = null;
   }
 
   fetchReadings(options = {}) {
-    if (this.activeRequest) {
+    const towerId = typeof options.towerId === "string" ? options.towerId.trim() : "";
+    const requestKey = towerId || "default";
+    if (this.activeRequest && this.activeRequestKey === requestKey) {
       return this.activeRequest;
     }
 
-    this.activeController = new AbortController();
-    this.activeRequest = this.performRequest(this.activeController, options.signal).finally(() => {
-      this.activeController = null;
-      this.activeRequest = null;
+    this.cancelActiveRequest();
+
+    const controller = new AbortController();
+    this.activeController = controller;
+    this.activeRequestKey = requestKey;
+    let request;
+    request = this.performRequest(controller, { signal: options.signal, towerId }).finally(() => {
+      if (this.activeRequest === request) {
+        this.activeController = null;
+        this.activeRequest = null;
+        this.activeRequestKey = null;
+      }
     });
-    return this.activeRequest;
+    this.activeRequest = request;
+    return request;
   }
 
-  async performRequest(controller, externalSignal) {
+  async performRequest(controller, options = {}) {
+    const externalSignal = options.signal;
     const abortFromExternalSignal = () => controller.abort();
     if (externalSignal?.aborted) {
       controller.abort();
@@ -67,7 +80,7 @@ export class SensorDataService {
             apikey: SUPABASE_CONFIG.publishableKey,
             "Content-Type": "application/json"
           },
-          body: "{}",
+          body: JSON.stringify(options.towerId ? { towerId: options.towerId } : {}),
           cache: "no-store",
           signal: controller.signal
         }
@@ -86,7 +99,9 @@ export class SensorDataService {
       if (!response.ok || payload?.ok === false) {
         const message = response.status === 401 || response.status === 403
           ? "You are not authorized to view sensor data."
-          : "The sensor-data service is temporarily unavailable.";
+          : typeof payload?.error === "string" && payload.error.length <= 220
+            ? payload.error
+            : "The sensor-data service is temporarily unavailable.";
         throw new SensorDataRequestError(message, { status: response.status });
       }
 
@@ -100,7 +115,8 @@ export class SensorDataService {
           rejected: Number(payload?.meta?.rejected) || normalized.invalidRows.length,
           generatedAt: typeof payload?.meta?.generatedAt === "string"
             ? payload.meta.generatedAt
-            : new Date().toISOString()
+            : new Date().toISOString(),
+          towerId: typeof payload?.meta?.towerId === "string" ? payload.meta.towerId : options.towerId || null
         })
       });
     } catch (error) {

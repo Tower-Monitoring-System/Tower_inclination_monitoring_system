@@ -3,7 +3,10 @@
 .settings-page[hidden],
 .settings-loading-overlay[hidden],
 .settings-confirm[hidden],
-[data-settings-error][hidden] {
+[data-settings-error][hidden],
+[data-tower-error][hidden],
+.tower-management-form-actions button[hidden],
+.tower-management-service-error[hidden] {
   display: none;
 }
 
@@ -33,9 +36,17 @@
   min-height: 680px;
 }
 
+.settings-left-column {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+  min-width: 0;
+}
+
 .settings-right-column {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto;
+  align-content: start;
   gap: 18px;
   min-width: 0;
 }
@@ -188,6 +199,181 @@
   background: #f5f9ff;
   font-size: 0.61rem;
   line-height: 1.45;
+}
+
+.tower-management-card {
+  min-width: 0;
+}
+
+.tower-management-header {
+  margin-bottom: 20px;
+}
+
+.tower-management-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 13px 14px;
+}
+
+.tower-management-form-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-self: end;
+  gap: 9px;
+}
+
+.tower-management-form-actions button {
+  min-height: 42px;
+}
+
+.tower-management-form-actions button:only-child {
+  grid-column: 2;
+}
+
+.tower-management-service-error {
+  margin: 13px 0 0;
+  padding: 9px 11px;
+  border: 1px solid #ffd0d6;
+  border-radius: 8px;
+  color: #a42a39;
+  background: #fff6f7;
+  font-size: 0.59rem;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.tower-management-list {
+  margin-top: 23px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.tower-management-list-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.tower-management-list-heading h3 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 0.72rem;
+}
+
+.tower-management-list-heading span {
+  color: var(--muted);
+  font-size: 0.57rem;
+  font-weight: 750;
+}
+
+.tower-management-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.tower-management-table {
+  width: 100%;
+  min-width: 610px;
+  border-collapse: collapse;
+  color: #304762;
+  font-size: 0.59rem;
+}
+
+.tower-management-table th,
+.tower-management-table td {
+  padding: 10px 11px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.tower-management-table th {
+  color: #4c6078;
+  background: #f7faff;
+  font-size: 0.55rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.tower-management-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.tower-management-table tbody tr:hover:not(.tower-management-empty-row) {
+  background: #f9fbff;
+}
+
+.tower-management-table td:first-child {
+  color: #183f78;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.tower-management-table td:nth-child(4) {
+  white-space: nowrap;
+}
+
+.tower-management-empty-row td {
+  padding: 23px 12px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.tower-management-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.tower-management-actions button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #286dcc;
+  background: transparent;
+  cursor: pointer;
+}
+
+.tower-management-actions button[data-tower-action="delete"] {
+  color: #d33346;
+}
+
+.tower-management-actions button:hover:not(:disabled) {
+  border-color: #cfe0f5;
+  background: #eff6ff;
+}
+
+.tower-management-actions button[data-tower-action="delete"]:hover:not(:disabled) {
+  border-color: #f4ccd1;
+  background: #fff3f5;
+}
+
+.tower-management-actions svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.tower-management-card input[aria-invalid="true"] {
+  border-color: #ee8d99;
+  background: #fffafa;
+}
+
+.tower-management-card button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .settings-calibration-actions {
@@ -580,8 +766,13 @@
   }
 
   .settings-axis-grid,
-  .settings-network-grid {
+  .settings-network-grid,
+  .tower-management-form {
     grid-template-columns: 1fr;
+  }
+
+  .tower-management-form-actions button:only-child {
+    grid-column: 2;
   }
 
   .settings-network-column + .settings-network-column {
@@ -619,5 +810,13 @@
 
   .settings-card-header {
     margin-bottom: 20px;
+  }
+
+  .tower-management-form-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .tower-management-form-actions button:only-child {
+    grid-column: auto;
   }
 }

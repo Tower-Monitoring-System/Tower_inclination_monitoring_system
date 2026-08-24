@@ -12,8 +12,8 @@
   <link rel="stylesheet" href="./css/dashboard.css?v=20260824.14" />
   <link rel="stylesheet" href="./css/list.css?v=20260824.4" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.2" />
-  <link rel="stylesheet" href="./css/towers.css?v=20260824.3" />
-  <link rel="stylesheet" href="./css/settings.css?v=20260824.1" />
+  <link rel="stylesheet" href="./css/towers.css?v=20260824.4" />
+  <link rel="stylesheet" href="./css/settings.css?v=20260824.2" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -90,6 +90,9 @@
     </symbol>
     <symbol id="icon-trash" viewBox="0 0 24 24">
       <path d="M4 7h16M9 7V4h6v3m3 0-1 14H7L6 7m4 4v6m4-6v6"></path>
+    </symbol>
+    <symbol id="icon-edit" viewBox="0 0 24 24">
+      <path d="M13.5 6.5 17.5 10.5M4 20l4.2-1 10.6-10.6a2.8 2.8 0 0 0-4-4L4.2 15 4 20Z"></path>
     </symbol>
   </svg>
 
@@ -227,6 +230,7 @@
                   <div>
                     <strong id="towerSelectedName">No tower selected</strong>
                     <span><b id="towerSelectedId">—</b> · <span id="towerSelectedLocation">No location available</span></span>
+                    <span class="tower-selected-battery">Battery <b id="towerCurrentBattery">—</b></span>
                     <small class="tower-status-badge offline" id="towerSelectedStatus">Offline</small>
                   </div>
                 </div>
@@ -549,7 +553,8 @@
         >
           <h1 class="sr-only" id="settingsPageTitle">System Settings</h1>
           <form class="settings-layout" id="systemSettingsForm" novalidate>
-            <article class="settings-card settings-calibration-card">
+            <div class="settings-left-column">
+              <article class="settings-card settings-calibration-card">
               <header class="settings-card-header">
                 <div>
                   <h2>MPU6050 Calibration</h2>
@@ -614,7 +619,56 @@
                   <svg aria-hidden="true"><use href="#icon-trash"></use></svg><span>Reset</span>
                 </button>
               </div>
-            </article>
+              </article>
+
+              <article class="settings-card tower-management-card" data-tower-management aria-labelledby="towerManagementTitle">
+                <header class="settings-card-header tower-management-header">
+                  <div>
+                    <h2 id="towerManagementTitle">Tower Management</h2>
+                    <p>Add towers and link each Tower ID to the matching Google Sheet tab</p>
+                  </div>
+                  <span class="settings-card-icon" aria-hidden="true"><svg><use href="#icon-tower"></use></svg></span>
+                </header>
+
+                <div class="tower-management-form" aria-label="Tower details">
+                  <label class="settings-field">
+                    <span>Tower ID</span>
+                    <input id="towerManagementId" type="text" maxlength="100" autocomplete="off" placeholder="e.g., TWR-004" aria-describedby="towerManagementIdError" />
+                    <small id="towerManagementIdError" data-tower-error="id" hidden></small>
+                  </label>
+                  <label class="settings-field">
+                    <span>Tower Name</span>
+                    <input id="towerManagementName" type="text" maxlength="120" autocomplete="off" placeholder="e.g., North Ridge" aria-describedby="towerManagementNameError" />
+                    <small id="towerManagementNameError" data-tower-error="name" hidden></small>
+                  </label>
+                  <label class="settings-field">
+                    <span>Location</span>
+                    <input id="towerManagementLocation" type="text" maxlength="120" autocomplete="off" placeholder="e.g., Hilltop 2" aria-describedby="towerManagementLocationError" />
+                    <small id="towerManagementLocationError" data-tower-error="location" hidden></small>
+                  </label>
+                  <div class="tower-management-form-actions">
+                    <button class="secondary-button" id="towerManagementCancel" type="button" hidden>Cancel</button>
+                    <button class="primary-button" id="towerManagementSave" type="button"><span>Add Tower</span></button>
+                  </div>
+                </div>
+
+                <p class="tower-management-service-error" id="towerManagementServiceError" role="alert" hidden></p>
+
+                <section class="tower-management-list" aria-labelledby="towerManagementListTitle">
+                  <div class="tower-management-list-heading">
+                    <h3 id="towerManagementListTitle">Added Towers</h3>
+                    <span id="towerManagementCount">0 towers</span>
+                  </div>
+                  <div class="tower-management-table-wrap">
+                    <table class="tower-management-table">
+                      <caption class="sr-only">Towers added to this monitoring dashboard</caption>
+                      <thead><tr><th scope="col">Tower ID</th><th scope="col">Tower Name</th><th scope="col">Location</th><th scope="col">Added At</th><th scope="col">Actions</th></tr></thead>
+                      <tbody id="towerManagementTableBody"></tbody>
+                    </table>
+                  </div>
+                </section>
+              </article>
+            </div>
 
             <div class="settings-right-column">
               <article class="settings-card settings-battery-card">
@@ -732,6 +786,14 @@
                 <div><button class="secondary-button" id="settingsResetConfirmCancel" type="button">Keep values</button><button class="settings-danger-button" id="settingsResetConfirmAccept" type="button">Reset calibration</button></div>
               </div>
             </div>
+            <div class="settings-confirm" id="towerDeleteConfirm" hidden data-tower-management>
+              <div class="settings-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="towerDeleteConfirmTitle" aria-describedby="towerDeleteConfirmDescription">
+                <span aria-hidden="true"><svg><use href="#icon-alert"></use></svg></span>
+                <h2 id="towerDeleteConfirmTitle">Stop managing this tower?</h2>
+                <p id="towerDeleteConfirmDescription">The tower will be removed from this dashboard. Its Google Sheet and sensor data will not be deleted.</p>
+                <div><button class="secondary-button" id="towerDeleteConfirmCancel" type="button">Keep tower</button><button class="settings-danger-button" id="towerDeleteConfirmAccept" type="button">Delete tower</button></div>
+              </div>
+            </div>
           </form>
           <p class="sr-only" id="settingsLiveStatus" role="status" aria-live="polite"></p>
         </section>
@@ -744,6 +806,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.9"></script>
+  <script type="module" src="./js/app.js?v=20260824.10"></script>
 </body>
 </html>

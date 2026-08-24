@@ -8,16 +8,17 @@ import { createStore } from "./core/store.js";
 import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
 import { AlertsPage } from "./pages/alertsPage.js?v=20260824.2";
 import { ListPage } from "./pages/listPage.js?v=20260824.2";
-import { SettingsPage } from "./pages/settingsPage.js?v=20260824.1";
-import { TowersPage } from "./pages/towersPage.js?v=20260824.3";
+import { SettingsPage } from "./pages/settingsPage.js?v=20260824.2";
+import { TowersPage } from "./pages/towersPage.js?v=20260824.4";
 import { AlertService } from "./services/alertService.js?v=20260824.2";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260823.11";
 import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260824.1";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
-import { SensorDataService } from "./services/sensorDataService.js?v=20260823.1";
+import { SensorDataService } from "./services/sensorDataService.js?v=20260824.2";
 import { SettingsService } from "./services/settingsService.js?v=20260824.1";
-import { TowerHistoryService } from "./services/towerHistoryService.js?v=20260824.1";
+import { TowerHistoryService } from "./services/towerHistoryService.js?v=20260824.2";
+import { TowerRegistryService } from "./services/towerRegistryService.js?v=20260824.1";
 
 const initialState = {
   stations: [],
@@ -47,6 +48,7 @@ let alertsPage;
 let towersPage;
 let settingsPage;
 let settingsService;
+let towerRegistryService;
 let refreshPromise = null;
 let autoRefreshTimer = null;
 const cleanupCallbacks = [];
@@ -259,6 +261,8 @@ async function bootstrap() {
       })
     });
     await settingsService.initialize();
+    towerRegistryService = new TowerRegistryService();
+    towerRegistryService.initialize();
     sensorDataService = new SensorDataService();
     listPage = new ListPage(sensorDataService, {
       onToast: (message, type) => dashboard.showToast(message, type),
@@ -272,14 +276,21 @@ async function bootstrap() {
       monitorWhenInactive: true
     });
     towersPage = new TowersPage(store.asReadonly(), {
-      onRefresh: () => refreshDashboard({ automatic: false }),
       onToast: (message, type) => dashboard.showToast(message, type),
-      historyService: new TowerHistoryService(new SensorDataService())
+      historyService: new TowerHistoryService(new SensorDataService()),
+      towerRegistryService
     });
     settingsPage = new SettingsPage(settingsService, {
       onToast: (message, type) => dashboard.showToast(message, type),
-      onSaved: () => alertsPage.refresh({ automatic: true })
+      onSaved: () => alertsPage.refresh({ automatic: true }),
+      towerRegistryService
     });
+    cleanupCallbacks.push(
+      towerRegistryService.subscribe(
+        (state) => dashboard.updateTowerRegistry(state.towers),
+        { immediate: true }
+      )
+    );
     dashboard.setIdentity(identity.displayName || identity.username);
     dashboard.setActiveView(currentView);
     syncPageControllers();

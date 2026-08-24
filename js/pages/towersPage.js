@@ -8,7 +8,7 @@ import {
   mergeTowerReadings,
   normalizeTowerReading,
   shiftLocalDate
-} from "../logic/towerMonitoringProcessor.js?v=20260824.2";
+} from "../logic/towerMonitoringProcessor.js?v=20260824.3";
 
 const STATUS_LABELS = Object.freeze({
   normal: "Stable",
@@ -33,12 +33,19 @@ export class TowersPage {
     this.config = options.config || TOWERS_CONFIG;
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
-    this.onRefresh = typeof options.onRefresh === "function" ? options.onRefresh : async () => {};
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
     this.historyService = options.historyService || null;
+    this.towerRegistry = options.towerRegistryService || null;
     this.abortController = new AbortController();
     this.state = readonlyStore.getState();
+    this.registryState = this.towerRegistry?.getState() || { towers: [], initialized: true, error: null };
     this.historyByTower = new Map();
+    this.historyLoadedTowerIds = new Set();
+    this.historyErrors = new Map();
+    this.historyInvalidRows = new Map();
+    this.historyLoadingTowerId = "";
+    this.historyRequest = null;
+    this.historyRequestSequence = 0;
     this.selectedTowerId = "";
     this.period = "day";
     this.day = localIsoDate();
@@ -47,11 +54,6 @@ export class TowersPage {
     this.customEnd = this.day;
     this.filterTouched = false;
     this.invalidReadingCount = 0;
-    this.historicalInvalidReadingCount = 0;
-    this.historyLoaded = false;
-    this.historyLoading = false;
-    this.historyError = null;
-    this.historyRefreshPromise = null;
     this.active = false;
     this.refreshing = false;
     this.refreshPromise = null;
@@ -60,7 +62,13 @@ export class TowersPage {
     this.vectorChart = new TowerVectorChart(this.document, this.window);
 
     this.bindEvents();
-    this.unsubscribe = this.store.subscribe((state) => this.ingestState(state));
+    this.unsubscribeStore = this.store.subscribe((state) => this.ingestState(state));
+    this.unsubscribeRegistry = this.towerRegistry?.subscribe(
+      (state) => this.handleRegistryState(state),
+      { immediate: false }
+    );
+    this.syncRegisteredTowers();
+    this.render();
   }
 
   collectElements() {
@@ -72,6 +80,7 @@ export class TowersPage {
       selectedId: byId("towerSelectedId"),
       selectedLocation: byId("towerSelectedLocation"),
       selectedStatus: byId("towerSelectedStatus"),
+      batteryValue: byId("towerCurrentBattery"),
       xValue: byId("towerCurrentX"),
       yValue: byId("towerCurrentY"),
       zValue: byId("towerCurrentZ"),
@@ -136,63 +145,99 @@ export class TowersPage {
 
   ingestState(state) {
     this.state = state;
+    if (this.towerRegistry) {
+      return;
+    }
+    this.ingestLegacyReadings(state.sensorData);
+    this.syncRegisteredTowers();
+    this.render();
+  }
+
+  ingestLegacyReadings(sensorData) {
     this.invalidReadingCount = 0;
     const groupedReadings = new Map();
-
-    (Array.isArray(state.sensorData) ? state.sensorData : []).forEach((packet) => {
+    (Array.isArray(sensorData) ? sensorData : []).forEach((packet) => {
       try {
         const reading = normalizeTowerReading(packet);
-        const towerReadings = groupedReadings.get(reading.stationId) || [];
-        towerReadings.push(reading);
-        groupedReadings.set(reading.stationId, towerReadings);
+        const readings = groupedReadings.get(reading.stationId) || [];
+        readings.push(reading);
+        groupedReadings.set(reading.stationId, readings);
       } catch (error) {
         this.invalidReadingCount += 1;
         this.window.console.warn("An invalid Towers reading was ignored.", error);
       }
     });
-
     groupedReadings.forEach((readings, towerId) => {
-      try {
-        this.historyByTower.set(
-          towerId,
-          mergeTowerReadings(
-            this.historyByTower.get(towerId) || [],
-            readings,
-            this.config.maximumHistoryPointsPerTower
-          )
-        );
-      } catch (error) {
-        this.invalidReadingCount += readings.length;
-        this.window.console.warn(`Tower history for ${towerId} could not be merged.`, error);
-      }
+      this.historyByTower.set(
+        towerId,
+        mergeTowerReadings(
+          this.historyByTower.get(towerId) || [],
+          readings,
+          this.config.maximumHistoryPointsPerTower
+        )
+      );
+      this.historyLoadedTowerIds.add(towerId);
     });
+  }
 
-    const stationIds = new Set((state.stations || []).map((station) => station.id));
+  handleRegistryState(state) {
+    this.registryState = state;
+    this.syncRegisteredTowers();
+    this.render();
+    if (this.active && this.selectedTowerId && !this.historyLoadedTowerIds.has(this.selectedTowerId)) {
+      void this.refreshHistoricalReadings({ automatic: true });
+    }
+  }
+
+  syncRegisteredTowers() {
+    const stations = this.sortedStations();
+    const stationIds = new Set(stations.map((station) => station.id));
     [...this.historyByTower.keys()].forEach((towerId) => {
       if (!stationIds.has(towerId)) {
         this.historyByTower.delete(towerId);
+        this.historyLoadedTowerIds.delete(towerId);
+        this.historyErrors.delete(towerId);
+        this.historyInvalidRows.delete(towerId);
       }
     });
+
     if (!stationIds.has(this.selectedTowerId)) {
-      this.selectedTowerId = this.sortedStations()[0]?.id || "";
+      const previousTowerId = this.selectedTowerId;
+      this.selectedTowerId = stations[0]?.id || "";
       this.filterTouched = false;
+      if (previousTowerId && this.historyLoadingTowerId === previousTowerId) {
+        this.cancelHistoryRequest();
+      }
+      this.followLatestDate();
     }
-    this.followLatestDate();
-    this.render();
   }
 
   sortedStations() {
-    return [...(this.state.stations || [])].sort((left, right) => left.id.localeCompare(right.id));
+    if (!this.towerRegistry) {
+      return [...(this.state.stations || [])].sort((left, right) => left.id.localeCompare(right.id));
+    }
+    return [...(this.registryState.towers || [])]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((tower) => ({
+        ...tower,
+        online: this.historyLoadedTowerIds.has(tower.id)
+          && !this.historyErrors.has(tower.id)
+          && (this.historyByTower.get(tower.id)?.length || 0) > 0
+      }));
   }
 
   changeTower(towerId) {
-    if (!this.sortedStations().some((station) => station.id === towerId)) {
+    if (!this.sortedStations().some((station) => station.id === towerId) || towerId === this.selectedTowerId) {
       return;
     }
+    this.cancelHistoryRequest();
     this.selectedTowerId = towerId;
     this.filterTouched = false;
     this.followLatestDate();
     this.render();
+    if (this.active && !this.historyLoadedTowerIds.has(towerId)) {
+      void this.refreshHistoricalReadings({ automatic: true });
+    }
   }
 
   followLatestDate() {
@@ -200,8 +245,8 @@ export class TowersPage {
       return;
     }
     const readings = this.historyByTower.get(this.selectedTowerId) || [];
-    const timestamp = readings.at(-1)?.timestamp || this.state.lastUpdatedAt || Date.now();
-    this.day = localIsoDate(timestamp);
+    const latest = readings.at(-1);
+    this.day = latest?.date || localIsoDate(latest?.timestamp || Date.now());
     this.month = this.day.slice(0, 7);
     this.customEnd = this.day;
     this.customStart = shiftLocalDate(this.day, -2);
@@ -229,21 +274,19 @@ export class TowersPage {
   }
 
   async refresh() {
-    if (this.refreshPromise) {
+    if (this.refreshPromise || !this.selectedTowerId) {
       return this.refreshPromise;
     }
     this.refreshing = true;
     this.render();
     this.refreshPromise = (async () => {
       try {
-        await Promise.all([
-          this.onRefresh(),
-          this.refreshHistoricalReadings({ rethrow: true })
-        ]);
-        this.announce("Tower monitoring data refreshed.");
+        await this.refreshHistoricalReadings({ rethrow: true });
+        this.announce(`${this.selectedTowerId} data refreshed.`);
+        this.onToast(`Tower ${this.selectedTowerId} data refreshed successfully.`, "info");
       } catch (error) {
         this.window.console.error("Towers refresh failed.", error);
-        this.onToast("Tower data could not be refreshed. The last valid values were retained.", "error");
+        this.onToast(error?.message || "Tower data could not be refreshed.", "error");
       } finally {
         this.refreshing = false;
         this.refreshPromise = null;
@@ -254,75 +297,91 @@ export class TowersPage {
   }
 
   refreshHistoricalReadings({ automatic = false, rethrow = false } = {}) {
-    if (!this.historyService) {
+    const towerId = this.selectedTowerId;
+    if (!this.historyService || !towerId) {
       return Promise.resolve(null);
     }
-    if (this.historyRefreshPromise) {
-      return this.historyRefreshPromise;
+    if (this.historyRequest?.towerId === towerId) {
+      return this.historyRequest.promise;
     }
 
-    this.historyLoading = true;
-    this.historyError = null;
+    this.cancelHistoryRequest();
+    const sequence = ++this.historyRequestSequence;
+    this.historyLoadingTowerId = towerId;
+    this.historyErrors.delete(towerId);
     this.render();
-    this.historyRefreshPromise = (async () => {
+    const promise = (async () => {
       try {
-        const result = await this.historyService.fetchReadings();
+        const result = await this.historyService.fetchReadings(towerId);
+        if (sequence !== this.historyRequestSequence) {
+          return null;
+        }
         const readings = Array.isArray(result.readings) ? result.readings : [];
-        this.historicalInvalidReadingCount = result.invalidRows?.length || 0;
-        this.mergeHistoricalReadings(readings);
-        this.historyLoaded = true;
+        this.historyInvalidRows.set(towerId, result.invalidRows?.length || 0);
+        this.replaceHistoricalReadings(towerId, readings);
+        this.historyLoadedTowerIds.add(towerId);
         this.followLatestDate();
         return result;
       } catch (error) {
-        if (error?.name === "AbortError") {
+        if (error?.name === "AbortError" || sequence !== this.historyRequestSequence) {
           return null;
         }
-        this.historyError = error?.message || "Historical tower data could not be loaded.";
-        this.window.console.error("Tower history refresh failed.", error);
+        const message = error?.message || `Tower ${towerId} data could not be loaded.`;
+        this.historyErrors.set(towerId, message);
+        this.window.console.error(`Tower history refresh failed for ${towerId}.`, error);
         if (!automatic && !rethrow) {
-          this.onToast("Historical tower data could not be refreshed.", "error");
+          this.onToast(message, "error");
         }
         if (rethrow) {
           throw error;
         }
         return null;
       } finally {
-        this.historyLoading = false;
-        this.historyRefreshPromise = null;
-        this.render();
+        if (sequence === this.historyRequestSequence) {
+          this.historyLoadingTowerId = "";
+          this.historyRequest = null;
+          this.render();
+        }
       }
     })();
-    return this.historyRefreshPromise;
+    this.historyRequest = { towerId, promise };
+    return promise;
   }
 
-  mergeHistoricalReadings(readings) {
-    const groupedReadings = new Map();
+  replaceHistoricalReadings(towerId, readings) {
+    const validReadings = [];
+    let invalidCount = this.historyInvalidRows.get(towerId) || 0;
     readings.forEach((packet) => {
       try {
         const reading = normalizeTowerReading(packet);
-        const towerReadings = groupedReadings.get(reading.stationId) || [];
-        towerReadings.push(reading);
-        groupedReadings.set(reading.stationId, towerReadings);
+        if (reading.stationId !== towerId) {
+          throw new TypeError("Historical reading belongs to a different tower.");
+        }
+        validReadings.push(reading);
       } catch (error) {
-        this.historicalInvalidReadingCount += 1;
-        this.window.console.warn("An invalid historical Towers reading was ignored.", error);
+        invalidCount += 1;
+        this.window.console.warn(`An invalid reading for ${towerId} was ignored.`, error);
       }
     });
+    this.historyInvalidRows.set(towerId, invalidCount);
+    this.historyByTower.set(
+      towerId,
+      mergeTowerReadings([], validReadings, this.config.maximumHistoryPointsPerTower)
+    );
+  }
 
-    groupedReadings.forEach((towerReadings, towerId) => {
-      this.historyByTower.set(
-        towerId,
-        mergeTowerReadings(
-          this.historyByTower.get(towerId) || [],
-          towerReadings,
-          this.config.maximumHistoryPointsPerTower
-        )
-      );
-    });
+  cancelHistoryRequest() {
+    if (!this.historyRequest && !this.historyLoadingTowerId) {
+      return;
+    }
+    this.historyRequestSequence += 1;
+    this.historyService?.cancelActiveRequest();
+    this.historyRequest = null;
+    this.historyLoadingTowerId = "";
   }
 
   currentStation() {
-    return (this.state.stations || []).find((station) => station.id === this.selectedTowerId) || null;
+    return this.sortedStations().find((station) => station.id === this.selectedTowerId) || null;
   }
 
   currentReadings() {
@@ -342,7 +401,7 @@ export class TowersPage {
   open() {
     this.active = true;
     this.render();
-    if (this.historyService && !this.historyLoaded && !this.historyRefreshPromise) {
+    if (this.selectedTowerId && !this.historyLoadedTowerIds.has(this.selectedTowerId)) {
       void this.refreshHistoricalReadings({ automatic: true });
     }
     this.window.setTimeout(() => {
@@ -355,7 +414,7 @@ export class TowersPage {
 
   close() {
     this.active = false;
-    this.historyService?.cancelActiveRequest();
+    this.cancelHistoryRequest();
   }
 
   render() {
@@ -363,12 +422,15 @@ export class TowersPage {
     this.renderTowerOptions(stations);
     this.renderFilters();
     this.renderError(stations.length);
-    const station = this.currentStation();
     const filteredReadings = this.filteredReadings();
-    const viewModel = createTowerViewModel(station, filteredReadings, { fallbackToStation: false });
+    const viewModel = createTowerViewModel(this.currentStation(), filteredReadings, { fallbackToStation: false });
     this.renderMetrics(viewModel);
     this.renderVectorValues(viewModel);
-    const loading = Boolean(this.state.loading || this.refreshing || this.historyLoading);
+    const loading = Boolean(
+      this.refreshing
+      || this.historyLoadingTowerId === this.selectedTowerId
+      || (this.towerRegistry && !this.registryState.initialized)
+    );
     this.elements.refreshButton.disabled = loading || stations.length === 0;
     this.elements.refreshButton.classList.toggle("is-loading", loading);
     this.elements.trendLoading.hidden = !loading || filteredReadings.length > 0;
@@ -412,22 +474,29 @@ export class TowersPage {
   }
 
   renderError(stationCount) {
-    const message = this.state.error
-      || this.historyError
-      || (this.invalidReadingCount + this.historicalInvalidReadingCount
-        ? `${this.invalidReadingCount + this.historicalInvalidReadingCount} invalid sensor reading(s) were ignored.`
-        : "");
+    const invalidCount = this.historyInvalidRows.get(this.selectedTowerId) || this.invalidReadingCount;
+    const noReadings = Boolean(
+      this.selectedTowerId
+      && this.historyLoadedTowerIds.has(this.selectedTowerId)
+      && this.currentReadings().length === 0
+    );
+    const message = this.registryState.error
+      || this.historyErrors.get(this.selectedTowerId)
+      || (invalidCount ? `${invalidCount} invalid sensor reading(s) were ignored.` : "")
+      || (noReadings ? `Google Sheet ${this.selectedTowerId} contains no valid sensor readings.` : "")
+      || (!this.towerRegistry ? this.state.error : "");
     this.elements.errorBanner.hidden = !message;
     if (message) {
       this.elements.errorMessage.textContent = message;
     }
-    const initialLoading = stationCount === 0 && Boolean(this.state.loading);
+
+    const initialLoading = stationCount === 0 && Boolean(this.towerRegistry && !this.registryState.initialized);
     this.elements.emptyState.hidden = stationCount > 0;
     this.elements.emptyState.classList.toggle("is-loading", initialLoading);
-    this.elements.emptyTitle.textContent = initialLoading ? "Loading towers…" : "No towers available";
+    this.elements.emptyTitle.textContent = initialLoading ? "Loading towers…" : "No towers added";
     this.elements.emptyDescription.textContent = initialLoading
-      ? "Validating the latest station and sensor data."
-      : "Connect a station data source, then refresh the dashboard to begin monitoring.";
+      ? "Loading the saved tower registry."
+      : "Add a tower in System Settings to link its Tower ID with the matching Google Sheet tab.";
     this.elements.content.hidden = stationCount === 0;
   }
 
@@ -440,6 +509,7 @@ export class TowersPage {
     const status = viewModel?.status || "offline";
     this.elements.selectedStatus.className = `tower-status-badge ${status}`;
     this.elements.selectedStatus.textContent = STATUS_LABELS[status] || "Unavailable";
+    this.elements.batteryValue.textContent = Number.isFinite(latest?.battery) ? `${latest.battery.toFixed(2)} V` : "—";
     this.elements.xValue.textContent = latest ? `${latest.x.toFixed(2)}°` : "—";
     this.elements.yValue.textContent = latest ? `${latest.y.toFixed(2)}°` : "—";
     this.elements.zValue.textContent = latest ? `${latest.z.toFixed(2)}°` : "—";
@@ -480,7 +550,8 @@ export class TowersPage {
   destroy() {
     this.close();
     this.abortController.abort();
-    this.unsubscribe?.();
+    this.unsubscribeStore?.();
+    this.unsubscribeRegistry?.();
     this.trendChart.destroy();
     this.vectorChart.destroy();
     this.historyService?.destroy();

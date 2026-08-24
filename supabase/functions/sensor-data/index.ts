@@ -10,7 +10,9 @@ type SensorRow = {
 };
 
 const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const LOCAL_DATE_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const TIME_PATTERN = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
+const INVALID_SHEET_NAME_PATTERN = /[:\\/?*\[\]]/;
 const MAXIMUM_ROWS = 20000;
 const UPSTREAM_TIMEOUT_MS = 10000;
 const ALLOWED_ROLES = new Set(["owner", "operator"]);
@@ -53,7 +55,12 @@ function normalizeDate(value: unknown) {
   if (typeof value !== "string") {
     return null;
   }
-  const match = value.trim().match(DATE_PATTERN);
+  const text = value.trim();
+  const isoMatch = text.match(DATE_PATTERN);
+  const localMatch = text.match(LOCAL_DATE_PATTERN);
+  const match = isoMatch || (localMatch
+    ? [localMatch[0], localMatch[3], localMatch[2], localMatch[1]]
+    : null);
   if (!match) {
     return null;
   }
@@ -92,7 +99,10 @@ function normalizeNumber(value: unknown, minimum: number, maximum: number) {
   if (value === null || value === undefined || value === "") {
     return null;
   }
-  const parsed = typeof value === "number" ? value : Number(value);
+  const normalizedValue = typeof value === "string" && value.includes(",") && !value.includes(".")
+    ? value.replace(",", ".")
+    : value;
+  const parsed = typeof normalizedValue === "number" ? normalizedValue : Number(normalizedValue);
   return Number.isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
 }
 
@@ -112,6 +122,25 @@ function normalizeRow(value: unknown): SensorRow | null {
     return null;
   }
   return { Date: date, Time: time, X: x, Y: y, Z: z, Battery: battery };
+}
+
+function validateTowerId(value: unknown) {
+  if (typeof value !== "string") {
+    return { valid: false as const, error: "Tower ID must be a string." };
+  }
+  const towerId = value.trim();
+  if (!towerId) {
+    return { valid: false as const, error: "Tower ID is required." };
+  }
+  if (
+    towerId.length > 100
+    || INVALID_SHEET_NAME_PATTERN.test(towerId)
+    || towerId.startsWith("'")
+    || towerId.endsWith("'")
+  ) {
+    return { valid: false as const, error: "Tower ID is not a valid Google Sheet name." };
+  }
+  return { valid: true as const, towerId };
 }
 
 Deno.serve(async (request) => {
@@ -160,6 +189,26 @@ Deno.serve(async (request) => {
     return jsonResponse({ ok: false, error: "Access denied." }, 403, corsOrigin);
   }
 
+  let requestPayload: Record<string, unknown>;
+  try {
+    const parsed = await request.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new TypeError("Request body must be an object.");
+    }
+    requestPayload = parsed as Record<string, unknown>;
+  } catch {
+    return jsonResponse({ ok: false, error: "Request body is invalid." }, 400, corsOrigin);
+  }
+
+  let towerId = "";
+  if (Object.prototype.hasOwnProperty.call(requestPayload, "towerId")) {
+    const validation = validateTowerId(requestPayload.towerId);
+    if (!validation.valid) {
+      return jsonResponse({ ok: false, error: validation.error }, 400, corsOrigin);
+    }
+    towerId = validation.towerId;
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
@@ -169,7 +218,7 @@ Deno.serve(async (request) => {
         Accept: "application/json",
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ token: sharedSecret }),
+      body: JSON.stringify(towerId ? { token: sharedSecret, towerId } : { token: sharedSecret }),
       redirect: "follow",
       signal: controller.signal
     });
@@ -189,8 +238,22 @@ Deno.serve(async (request) => {
       return jsonResponse({ ok: false, error: "Sensor data source returned an invalid response." }, 502, corsOrigin);
     }
 
-    const payload = upstreamPayload as { ok?: unknown; data?: unknown };
-    if (!payload || payload.ok !== true || !Array.isArray(payload.data)) {
+    const payload = upstreamPayload as {
+      ok?: unknown;
+      data?: unknown;
+      error?: unknown;
+      errorCode?: unknown;
+      meta?: { towerId?: unknown };
+    };
+    if (!payload || payload.ok !== true) {
+      const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : "UPSTREAM_ERROR";
+      const upstreamMessage = typeof payload?.error === "string" && payload.error.length <= 220
+        ? payload.error
+        : "Sensor data source returned an invalid response.";
+      const status = errorCode === "SHEET_NOT_FOUND" ? 404 : errorCode === "INVALID_TOWER_ID" ? 400 : 502;
+      return jsonResponse({ ok: false, error: upstreamMessage, errorCode }, status, corsOrigin);
+    }
+    if (!Array.isArray(payload.data)) {
       return jsonResponse({ ok: false, error: "Sensor data source returned an invalid response." }, 502, corsOrigin);
     }
     if (payload.data.length > MAXIMUM_ROWS) {
@@ -210,7 +273,8 @@ Deno.serve(async (request) => {
           received: payload.data.length,
           accepted: data.length,
           rejected: payload.data.length - data.length,
-          generatedAt: new Date().toISOString()
+          generatedAt: new Date().toISOString(),
+          towerId: typeof payload.meta?.towerId === "string" ? payload.meta.towerId : towerId || null
         }
       },
       200,

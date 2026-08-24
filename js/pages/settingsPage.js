@@ -17,17 +17,48 @@ function formatTilt(value) {
   return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "—";
 }
 
+const ADDED_AT_FORMAT = new Intl.DateTimeFormat("en-GB", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23"
+});
+
+function createActionButton(documentRef, action, towerId, label, iconId) {
+  const button = documentRef.createElement("button");
+  button.type = "button";
+  button.dataset.towerAction = action;
+  button.dataset.towerId = towerId;
+  button.setAttribute("aria-label", `${label} ${towerId}`);
+  button.title = label;
+  const svg = documentRef.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("aria-hidden", "true");
+  const use = documentRef.createElementNS("http://www.w3.org/2000/svg", "use");
+  use.setAttribute("href", iconId);
+  svg.append(use);
+  button.append(svg);
+  return button;
+}
+
 export class SettingsPage {
   constructor(settingsService, options = {}) {
     this.service = settingsService;
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
+    this.towerRegistry = options.towerRegistryService || null;
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
     this.onSaved = typeof options.onSaved === "function" ? options.onSaved : async () => {};
     this.abortController = new AbortController();
     this.active = false;
     this.busyAction = null;
     this.currentTilt = null;
+    this.towerRegistryState = this.towerRegistry?.getState() || { towers: [], initialized: true, error: null };
+    this.towerDraft = { id: "", name: "", location: "" };
+    this.towerValidationErrors = {};
+    this.editingTowerId = "";
+    this.pendingDeleteTowerId = "";
     this.savedSettings = mergeSystemSettings(this.service.getSettings());
     this.draft = mergeSystemSettings(this.savedSettings);
     this.validation = this.service.validate(this.draft);
@@ -36,6 +67,10 @@ export class SettingsPage {
     this.applyInputLimits();
     this.bindEvents();
     this.unsubscribe = this.service.subscribe((state) => this.handleServiceState(state), { immediate: false });
+    this.unsubscribeTowerRegistry = this.towerRegistry?.subscribe(
+      (state) => this.handleTowerRegistryState(state),
+      { immediate: false }
+    );
     this.render();
   }
 
@@ -63,6 +98,18 @@ export class SettingsPage {
       resetConfirm: byId("settingsResetConfirm"),
       resetConfirmCancel: byId("settingsResetConfirmCancel"),
       resetConfirmAccept: byId("settingsResetConfirmAccept"),
+      towerId: byId("towerManagementId"),
+      towerName: byId("towerManagementName"),
+      towerLocation: byId("towerManagementLocation"),
+      towerSave: byId("towerManagementSave"),
+      towerCancel: byId("towerManagementCancel"),
+      towerTableBody: byId("towerManagementTableBody"),
+      towerCount: byId("towerManagementCount"),
+      towerServiceError: byId("towerManagementServiceError"),
+      towerDeleteConfirm: byId("towerDeleteConfirm"),
+      towerDeleteDescription: byId("towerDeleteConfirmDescription"),
+      towerDeleteCancel: byId("towerDeleteConfirmCancel"),
+      towerDeleteAccept: byId("towerDeleteConfirmAccept"),
       loadingOverlay: byId("settingsLoadingOverlay"),
       liveStatus: byId("settingsLiveStatus")
     };
@@ -89,6 +136,7 @@ export class SettingsPage {
   }
 
   bindEvents() {
+    this.listen(this.elements.form, "submit", (event) => event.preventDefault());
     this.document.querySelectorAll("[data-setting-path]").forEach((input) => {
       const eventName = input.type === "checkbox" || input.tagName === "SELECT" ? "change" : "input";
       this.listen(input, eventName, () => this.handleSettingInput(input));
@@ -110,11 +158,164 @@ export class SettingsPage {
     this.listen(this.elements.applyButton, "click", () => this.applyChanges());
     this.listen(this.elements.testButton, "click", () => this.testConnection());
     this.listen(this.elements.connectApButton, "click", () => this.connectAccessPoint());
-    this.listen(this.document, "keydown", (event) => {
-      if (event.key === "Escape" && !this.elements.resetConfirm.hidden) {
-        this.closeResetConfirmation();
+    [this.elements.towerId, this.elements.towerName, this.elements.towerLocation].forEach((input) => {
+      this.listen(input, "input", () => this.handleTowerInput(input));
+      this.listen(input, "keydown", (event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          this.saveTower();
+        }
+      });
+    });
+    this.listen(this.elements.towerSave, "click", () => this.saveTower());
+    this.listen(this.elements.towerCancel, "click", () => this.cancelTowerEdit());
+    this.listen(this.elements.towerTableBody, "click", (event) => {
+      const button = event.target.closest?.("[data-tower-action]");
+      if (!button) {
+        return;
+      }
+      if (button.dataset.towerAction === "edit") {
+        this.editTower(button.dataset.towerId);
+      } else if (button.dataset.towerAction === "delete") {
+        this.openTowerDeleteConfirmation(button.dataset.towerId);
       }
     });
+    this.listen(this.elements.towerDeleteCancel, "click", () => this.closeTowerDeleteConfirmation());
+    this.listen(this.elements.towerDeleteAccept, "click", () => this.confirmTowerDelete());
+    this.listen(this.elements.towerDeleteConfirm, "click", (event) => {
+      if (event.target === this.elements.towerDeleteConfirm) {
+        this.closeTowerDeleteConfirmation();
+      }
+    });
+    this.listen(this.document, "keydown", (event) => {
+      if (event.key === "Escape") {
+        if (!this.elements.towerDeleteConfirm.hidden) {
+          this.closeTowerDeleteConfirmation();
+        } else if (!this.elements.resetConfirm.hidden) {
+          this.closeResetConfirmation();
+        }
+      }
+    });
+  }
+
+  handleTowerRegistryState(state) {
+    this.towerRegistryState = state;
+    if (this.editingTowerId && !this.towerRegistry?.find(this.editingTowerId)) {
+      this.resetTowerDraft();
+    }
+    this.renderTowerManagement();
+  }
+
+  handleTowerInput(input) {
+    const fieldById = {
+      towerManagementId: "id",
+      towerManagementName: "name",
+      towerManagementLocation: "location"
+    };
+    const field = fieldById[input.id];
+    if (!field) {
+      return;
+    }
+    this.towerDraft[field] = input.value;
+    delete this.towerValidationErrors[field];
+    this.renderTowerValidation();
+  }
+
+  saveTower() {
+    if (!this.towerRegistry || this.busyAction) {
+      return;
+    }
+    const validation = this.towerRegistry.validate(this.towerDraft, {
+      excludeId: this.editingTowerId || undefined
+    });
+    this.towerValidationErrors = { ...validation.errors };
+    this.renderTowerValidation();
+    if (!validation.valid) {
+      const firstField = Object.keys(validation.errors)[0];
+      ({ id: this.elements.towerId, name: this.elements.towerName, location: this.elements.towerLocation })[firstField]?.focus();
+      this.onToast("Review the highlighted tower details.", "error");
+      return;
+    }
+
+    try {
+      const editing = Boolean(this.editingTowerId);
+      const tower = editing
+        ? this.towerRegistry.update(this.editingTowerId, validation.tower)
+        : this.towerRegistry.add(validation.tower);
+      this.resetTowerDraft();
+      this.announce(`${tower.id} ${editing ? "updated" : "added"} successfully.`);
+      this.onToast(`Tower ${tower.id} ${editing ? "updated" : "added"} successfully.`, "info");
+      this.elements.towerId.focus();
+    } catch (error) {
+      if (error?.errors) {
+        this.towerValidationErrors = { ...error.errors };
+        this.renderTowerValidation();
+      }
+      this.window.console.error("Tower changes could not be saved.", error);
+      this.onToast(error?.message || "Tower changes could not be saved.", "error");
+    }
+  }
+
+  editTower(towerId) {
+    const tower = this.towerRegistry?.find(towerId);
+    if (!tower || this.busyAction) {
+      return;
+    }
+    this.editingTowerId = tower.id;
+    this.towerDraft = { id: tower.id, name: tower.name, location: tower.location };
+    this.towerValidationErrors = {};
+    this.renderTowerManagement();
+    this.elements.towerId.focus();
+  }
+
+  cancelTowerEdit() {
+    this.resetTowerDraft();
+    this.elements.towerId.focus();
+  }
+
+  resetTowerDraft() {
+    this.editingTowerId = "";
+    this.towerDraft = { id: "", name: "", location: "" };
+    this.towerValidationErrors = {};
+    this.renderTowerManagement();
+  }
+
+  openTowerDeleteConfirmation(towerId) {
+    const tower = this.towerRegistry?.find(towerId);
+    if (!tower || this.busyAction) {
+      return;
+    }
+    this.pendingDeleteTowerId = tower.id;
+    this.elements.towerDeleteDescription.textContent = `${tower.id} will be removed from this dashboard. Its Google Sheet and sensor data will not be deleted.`;
+    this.elements.towerDeleteConfirm.hidden = false;
+    this.elements.towerDeleteAccept.focus();
+  }
+
+  closeTowerDeleteConfirmation() {
+    this.pendingDeleteTowerId = "";
+    this.elements.towerDeleteConfirm.hidden = true;
+  }
+
+  confirmTowerDelete() {
+    const towerId = this.pendingDeleteTowerId;
+    if (!towerId || !this.towerRegistry) {
+      return;
+    }
+    try {
+      const removed = this.towerRegistry.remove(towerId);
+      this.closeTowerDeleteConfirmation();
+      if (removed) {
+        if (this.editingTowerId === removed.id) {
+          this.resetTowerDraft();
+        }
+        this.announce(`${removed.id} was removed from the dashboard.`);
+        this.onToast(`Tower ${removed.id} removed. Google Sheet data was not deleted.`, "warning");
+      }
+    } catch (error) {
+      this.window.console.error("The tower could not be removed.", error);
+      this.closeTowerDeleteConfirmation();
+      this.onToast(error?.message || "The tower could not be removed.", "error");
+    }
   }
 
   handleServiceState(state) {
@@ -139,6 +340,7 @@ export class SettingsPage {
   close() {
     this.active = false;
     this.closeResetConfirmation();
+    this.closeTowerDeleteConfirmation();
   }
 
   handleSettingInput(input) {
@@ -157,6 +359,87 @@ export class SettingsPage {
     this.renderValidation();
     this.renderNetworkState();
     this.renderActionState();
+  }
+
+  renderTowerManagement() {
+    if (!this.elements.towerTableBody) {
+      return;
+    }
+    this.elements.towerId.value = this.towerDraft.id;
+    this.elements.towerName.value = this.towerDraft.name;
+    this.elements.towerLocation.value = this.towerDraft.location;
+    this.elements.towerCancel.hidden = !this.editingTowerId;
+    const saveLabel = this.elements.towerSave.querySelector("span");
+    if (saveLabel) {
+      saveLabel.textContent = this.editingTowerId ? "Save Tower" : "Add Tower";
+    }
+    const towers = this.towerRegistryState.towers || [];
+    this.elements.towerCount.textContent = `${towers.length} ${towers.length === 1 ? "tower" : "towers"}`;
+    const fragment = this.document.createDocumentFragment();
+    if (towers.length === 0) {
+      const row = this.document.createElement("tr");
+      row.className = "tower-management-empty-row";
+      const cell = this.document.createElement("td");
+      cell.colSpan = 5;
+      cell.textContent = "No towers have been added yet.";
+      row.append(cell);
+      fragment.append(row);
+    } else {
+      towers.forEach((tower) => {
+        const row = this.document.createElement("tr");
+        [tower.id, tower.name, tower.location, ADDED_AT_FORMAT.format(new Date(tower.addedAt))].forEach((value) => {
+          const cell = this.document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        });
+        const actionsCell = this.document.createElement("td");
+        const actions = this.document.createElement("div");
+        actions.className = "tower-management-actions";
+        actions.append(
+          createActionButton(this.document, "edit", tower.id, "Edit", "#icon-edit"),
+          createActionButton(this.document, "delete", tower.id, "Delete", "#icon-trash")
+        );
+        actionsCell.append(actions);
+        row.append(actionsCell);
+        fragment.append(row);
+      });
+    }
+    this.elements.towerTableBody.replaceChildren(fragment);
+    const serviceError = this.towerRegistryState.error || "";
+    this.elements.towerServiceError.textContent = serviceError;
+    this.elements.towerServiceError.hidden = !serviceError;
+    this.renderTowerValidation();
+    this.renderTowerActionState();
+  }
+
+  renderTowerValidation() {
+    const inputs = {
+      id: this.elements.towerId,
+      name: this.elements.towerName,
+      location: this.elements.towerLocation
+    };
+    Object.entries(inputs).forEach(([field, input]) => {
+      const message = this.towerValidationErrors[field] || "";
+      input?.setAttribute("aria-invalid", message ? "true" : "false");
+      const errorElement = this.document.querySelector(`[data-tower-error='${field}']`);
+      if (errorElement) {
+        errorElement.textContent = message;
+        errorElement.hidden = !message;
+      }
+    });
+  }
+
+  renderTowerActionState() {
+    const disabled = Boolean(this.busyAction || !this.towerRegistryState.initialized);
+    [this.elements.towerId, this.elements.towerName, this.elements.towerLocation, this.elements.towerSave, this.elements.towerCancel]
+      .forEach((control) => {
+        if (control) {
+          control.disabled = disabled;
+        }
+      });
+    this.elements.towerTableBody?.querySelectorAll("button").forEach((button) => {
+      button.disabled = disabled;
+    });
   }
 
   syncLinkedControls(path, sourceInput) {
@@ -346,6 +629,7 @@ export class SettingsPage {
     this.renderValidation();
     this.renderNetworkState();
     this.renderActionState();
+    this.renderTowerManagement();
   }
 
   renderCurrentValues() {
@@ -391,10 +675,11 @@ export class SettingsPage {
     this.elements.page?.classList.toggle("is-busy", busy);
     this.elements.loadingOverlay.hidden = !busy;
     this.elements.form.querySelectorAll("button, input, select").forEach((control) => {
-      if (control.closest(".settings-confirm-dialog")) {
+      if (control.closest(".settings-confirm-dialog") || control.closest("[data-tower-management]")) {
         return;
       }
-      control.disabled = busy || control.disabled && control.closest("#settingsStaticFields")?.classList.contains("is-disabled");
+      const staticField = control.closest("#settingsStaticFields");
+      control.disabled = busy || Boolean(staticField && this.draft.wifi.ipMode !== "static");
     });
     this.renderNetworkState();
     this.elements.cancelButton.disabled = busy || !this.isDirty();
@@ -403,6 +688,7 @@ export class SettingsPage {
     if (applyLabel) {
       applyLabel.textContent = this.busyAction === "apply" ? "Applying…" : "Apply";
     }
+    this.renderTowerActionState();
   }
 
   announce(message) {
@@ -418,5 +704,6 @@ export class SettingsPage {
     this.close();
     this.abortController.abort();
     this.unsubscribe?.();
+    this.unsubscribeTowerRegistry?.();
   }
 }

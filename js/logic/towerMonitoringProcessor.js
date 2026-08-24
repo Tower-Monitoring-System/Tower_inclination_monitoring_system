@@ -18,6 +18,36 @@ function validTimestamp(value) {
   return timestamp;
 }
 
+function optionalBattery(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const parsed = typeof value === "string" ? Number(value.replace(",", ".")) : Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 24) {
+    throw new TypeError("Battery voltage must be a finite value between 0 and 24 volts.");
+  }
+  return parsed;
+}
+
+function optionalIsoDate(value) {
+  if (value === undefined || value === null || value === "") {
+    return null;
+  }
+  const match = String(value).trim().match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    throw new TypeError("Tower reading date must use the YYYY-MM-DD format.");
+  }
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])));
+  if (
+    date.getUTCFullYear() !== Number(match[1])
+    || date.getUTCMonth() !== Number(match[2]) - 1
+    || date.getUTCDate() !== Number(match[3])
+  ) {
+    throw new TypeError("Tower reading date is invalid.");
+  }
+  return `${match[1]}-${match[2]}-${match[3]}`;
+}
+
 export function localIsoDate(timestamp = Date.now()) {
   const date = new Date(timestamp);
   const year = date.getFullYear();
@@ -49,6 +79,8 @@ export function normalizeTowerReading(packet) {
     x: finiteAxis(packet.tiltX ?? packet.x, "X tilt"),
     y: finiteAxis(packet.tiltY ?? packet.y, "Y tilt"),
     z: finiteAxis(packet.tiltZ ?? packet.z ?? 0, "Z tilt"),
+    battery: optionalBattery(packet.battery ?? packet.voltage),
+    date: optionalIsoDate(packet.date),
     timestamp: validTimestamp(packet.timestamp)
   });
 }
@@ -69,10 +101,6 @@ export function mergeTowerReadings(previousReadings, incomingReadings, maximumPo
   );
 }
 
-function localMonth(timestamp) {
-  return localIsoDate(timestamp).slice(0, 7);
-}
-
 export function filterTowerReadings(readings, filter = {}) {
   if (!Array.isArray(readings)) {
     return [];
@@ -80,16 +108,16 @@ export function filterTowerReadings(readings, filter = {}) {
   const period = VALID_PERIODS.has(filter.period) ? filter.period : "day";
 
   return readings.filter((reading) => {
+    const readingDate = reading.date || localIsoDate(reading.timestamp);
     if (period === "month") {
-      return localMonth(reading.timestamp) === filter.month;
+      return readingDate.slice(0, 7) === filter.month;
     }
     if (period === "custom") {
-      const readingDate = localIsoDate(reading.timestamp);
       return Boolean(filter.startDate && filter.endDate)
         && readingDate >= filter.startDate
         && readingDate <= filter.endDate;
     }
-    return localIsoDate(reading.timestamp) === filter.day;
+    return readingDate === filter.day;
   });
 }
 

@@ -74,7 +74,8 @@ export const CHART_CONSTANTS = Object.freeze({
 export const STORAGE_KEYS = Object.freeze({
   session: "tower-monitor.auth-session",
   rememberedUsername: "tower-monitor.remembered-username",
-  systemSettings: "tower-monitor.system-settings.v1"
+  systemSettings: "tower-monitor.system-settings.v1",
+  towerRegistry: "tower-monitor.tower-registry.v1"
 });
 
 export const DASHBOARD_ACTION = Object.freeze({

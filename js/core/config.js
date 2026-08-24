@@ -45,6 +45,5 @@ export const ALERT_CONFIG = Object.freeze({
 });
 
 export const TOWERS_CONFIG = Object.freeze({
-  sourceTowerId: ALERT_CONFIG.sourceTowerId,
   maximumHistoryPointsPerTower: SENSOR_DATA_CONFIG.maximumRecords
 });

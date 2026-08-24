@@ -1,22 +1,26 @@
-import { TOWERS_CONFIG } from "../core/config.js?v=20260824.2";
-
 export class TowerHistoryService {
-  constructor(sensorDataService, options = {}) {
+  constructor(sensorDataService) {
     if (!sensorDataService || typeof sensorDataService.fetchReadings !== "function") {
       throw new TypeError("TowerHistoryService requires a SensorDataService instance.");
     }
     this.sensorDataService = sensorDataService;
-    this.sourceTowerId = options.sourceTowerId || TOWERS_CONFIG.sourceTowerId;
   }
 
-  async fetchReadings(options = {}) {
-    const result = await this.sensorDataService.fetchReadings(options);
+  async fetchReadings(towerId, options = {}) {
+    const requestedTowerId = typeof towerId === "string" ? towerId.trim() : "";
+    if (!requestedTowerId) {
+      throw new TypeError("A Tower ID is required to load Google Sheet data.");
+    }
+    const result = await this.sensorDataService.fetchReadings({ ...options, towerId: requestedTowerId });
     const readings = result.readings.map((reading) => Object.freeze({
-      stationId: this.sourceTowerId,
+      stationId: requestedTowerId,
       tiltX: reading.x,
       tiltY: reading.y,
       tiltZ: reading.z,
-      timestamp: reading.timestamp
+      battery: reading.battery,
+      date: reading.date,
+      time: reading.time,
+      timestamp: localSensorTimestamp(reading.date, reading.time)
     }));
 
     return Object.freeze({
@@ -33,4 +37,20 @@ export class TowerHistoryService {
   destroy() {
     this.sensorDataService.destroy();
   }
+}
+
+function localSensorTimestamp(dateValue, timeValue) {
+  const dateMatch = String(dateValue).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const timeMatch = String(timeValue).match(/^(\d{2}):(\d{2}):(\d{2})$/);
+  if (!dateMatch || !timeMatch) {
+    throw new TypeError("Sensor date and time are invalid.");
+  }
+  return new Date(
+    Number(dateMatch[1]),
+    Number(dateMatch[2]) - 1,
+    Number(dateMatch[3]),
+    Number(timeMatch[1]),
+    Number(timeMatch[2]),
+    Number(timeMatch[3])
+  ).getTime();
 }

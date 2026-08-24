@@ -50,7 +50,9 @@ Tower_inclination_monitoring_system/
 │   │   ├── settingsRepository.js
 │   │   ├── settingsService.js
 │   │   ├── esp32SettingsAdapter.js
-│   │   └── towerHistoryService.js
+│   │   ├── towerHistoryService.js
+│   │   ├── towerRegistryRepository.js
+│   │   └── towerRegistryService.js
 │   │
 │   ├── logic/
 │   │   ├── tiltProcessor.js
@@ -59,7 +61,8 @@ Tower_inclination_monitoring_system/
 │   │   ├── sensorDataProcessor.js
 │   │   ├── alertProcessor.js
 │   │   ├── settingsValidation.js
-│   │   └── towerMonitoringProcessor.js
+│   │   ├── towerMonitoringProcessor.js
+│   │   └── towerRegistryValidation.js
 │   │
 │   ├── pages/
 │   │   ├── listPage.js
@@ -114,10 +117,10 @@ Applied battery and per-axis inclination thresholds come from the shared System 
 
 ## System Settings
 
-The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, the battery warning threshold, and ESP32 Wi-Fi/AP settings. Validation, persistence, and device communication are separated into dedicated modules so the mock ESP32 adapter can be replaced by a production transport without changing the UI. Wi-Fi and AP passwords are never written to browser storage.
+The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, the battery warning threshold, ESP32 Wi-Fi/AP settings, and the shared Tower Registry. Tower records are validated and persisted through a repository/service boundary; Tower ID is the exact Google Sheet tab name. Wi-Fi and AP passwords are never written to browser storage.
 
 ## Tower Monitoring
 
-The Towers page combines the dashboard's validated realtime state with the historical sensor-data service used by List and Alerts. Day/Month/Custom filtering is applied once and shared by the current X/Y/Z/resultant metrics, the interactive X/Y trend, and the 3-axis orientation view.
+The Towers page builds Select Tower only from the shared Tower Registry. Selecting a Tower forwards its ID through `TowerHistoryService`, the authenticated Supabase Edge Function, and Google Apps Script so the matching Sheet tab is read dynamically. No sample Tower is inserted into the selector.
 
-`TOWERS_CONFIG.sourceTowerId` maps the current single-tower Google Sheet to a station, while `maximumHistoryPointsPerTower` bounds the retained history. `SensorData` accepts an optional `tiltZ`; existing two-axis payloads remain compatible and default Z to `0`.
+Day/Month/Custom filtering is applied once and shared by the current X/Y/Z/resultant/battery values, the interactive X/Y trend, and the 3-axis orientation view. `TOWERS_CONFIG.maximumHistoryPointsPerTower` bounds retained history, while switching or deleting a Tower cancels stale requests and prevents readings from being mixed across Tower IDs.

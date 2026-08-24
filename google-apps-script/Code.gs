@@ -6,7 +6,7 @@ function doPost(event) {
     var properties = PropertiesService.getScriptProperties();
     var expectedToken = properties.getProperty("SENSOR_DATA_SHARED_SECRET");
     var sheetId = properties.getProperty("SENSOR_SHEET_ID");
-    var sheetName = properties.getProperty("SENSOR_SHEET_NAME") || "";
+    var fallbackSheetName = properties.getProperty("SENSOR_SHEET_NAME") || "";
 
     if (!expectedToken || !sheetId) {
       return jsonResponse_({ ok: false, error: "Service is not configured." });
@@ -17,22 +17,51 @@ function doPost(event) {
       return jsonResponse_({ ok: false, error: "Unauthorized request." });
     }
 
-    var spreadsheet = SpreadsheetApp.openById(sheetId);
-    var sheet = sheetName ? spreadsheet.getSheetByName(sheetName) : spreadsheet.getSheets()[0];
-    if (!sheet) {
-      return jsonResponse_({ ok: false, error: "Sensor sheet is unavailable." });
+    var requestedTower = resolveRequestedTower_(request);
+    if (!requestedTower.valid) {
+      return jsonResponse_({
+        ok: false,
+        errorCode: "INVALID_TOWER_ID",
+        error: requestedTower.error
+      });
     }
+
+    var spreadsheet = SpreadsheetApp.openById(sheetId);
+    var sheet = requestedTower.provided
+      ? spreadsheet.getSheetByName(requestedTower.value)
+      : fallbackSheetName
+        ? spreadsheet.getSheetByName(fallbackSheetName)
+        : spreadsheet.getSheets()[0];
+    if (!sheet) {
+      return requestedTower.provided
+        ? jsonResponse_({
+            ok: false,
+            errorCode: "SHEET_NOT_FOUND",
+            error: "No Google Sheet found for Tower " + requestedTower.value + "."
+          })
+        : jsonResponse_({ ok: false, errorCode: "SHEET_UNAVAILABLE", error: "Sensor sheet is unavailable." });
+    }
+
+    var resolvedTowerId = requestedTower.provided ? requestedTower.value : sheet.getName();
 
     var lastRow = sheet.getLastRow();
     var lastColumn = sheet.getLastColumn();
     if (lastRow < 1 || lastColumn < 1) {
-      return jsonResponse_({ ok: true, data: [], meta: { received: 0, accepted: 0, rejected: 0 } });
+      return jsonResponse_({
+        ok: true,
+        data: [],
+        meta: { received: 0, accepted: 0, rejected: 0, towerId: resolvedTowerId }
+      });
     }
 
     var values = sheet.getRange(1, 1, Math.min(lastRow, MAXIMUM_ROWS + 1), lastColumn).getValues();
     var indexes = resolveHeaderIndexes_(values[0]);
     if (!indexes) {
-      return jsonResponse_({ ok: false, error: "Required sensor columns are missing." });
+      return jsonResponse_({
+        ok: false,
+        errorCode: "INVALID_SHEET_HEADERS",
+        error: "Required sensor columns are missing in Google Sheet " + resolvedTowerId + "."
+      });
     }
 
     var timeZone = spreadsheet.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || "Asia/Ho_Chi_Minh";
@@ -56,12 +85,30 @@ function doPost(event) {
       meta: {
         received: data.length + rejected,
         accepted: data.length,
-        rejected: rejected
+        rejected: rejected,
+        towerId: resolvedTowerId
       }
     });
   } catch (error) {
     return jsonResponse_({ ok: false, error: "Sensor data is temporarily unavailable." });
   }
+}
+
+function resolveRequestedTower_(request) {
+  if (!Object.prototype.hasOwnProperty.call(request, "towerId")) {
+    return { valid: true, provided: false, value: "", error: "" };
+  }
+  if (typeof request.towerId !== "string") {
+    return { valid: false, provided: true, value: "", error: "Tower ID must be a string." };
+  }
+  var towerId = request.towerId.trim();
+  if (!towerId) {
+    return { valid: false, provided: true, value: "", error: "Tower ID is required." };
+  }
+  if (towerId.length > 100 || /[:\\/?*\[\]]/.test(towerId) || towerId.charAt(0) === "'" || towerId.charAt(towerId.length - 1) === "'") {
+    return { valid: false, provided: true, value: "", error: "Tower ID is not a valid Google Sheet name." };
+  }
+  return { valid: true, provided: true, value: towerId, error: "" };
 }
 
 function parseRequest_(event) {
@@ -131,6 +178,10 @@ function normalizeDate_(value, timeZone) {
   }
   var text = String(value || "").trim();
   var match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  var localMatch = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match && localMatch) {
+    match = [localMatch[0], localMatch[3], localMatch[2], localMatch[1]];
+  }
   if (!match) {
     return null;
   }
@@ -175,7 +226,14 @@ function normalizeNumber_(value, minimum, maximum) {
   if (value === "" || value === null || value === undefined) {
     return null;
   }
-  var parsed = typeof value === "number" ? value : Number(value);
+  var normalizedValue = value;
+  if (typeof value === "string") {
+    normalizedValue = value.trim();
+    if (normalizedValue.indexOf(",") >= 0 && normalizedValue.indexOf(".") < 0) {
+      normalizedValue = normalizedValue.replace(",", ".");
+    }
+  }
+  var parsed = typeof normalizedValue === "number" ? normalizedValue : Number(normalizedValue);
   return isFinite(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
 }
 

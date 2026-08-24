@@ -1,4 +1,5 @@
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const LOCAL_DATE_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const TIME_PATTERN = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
 const PERIODS = new Set(["day", "month", "custom"]);
 const SORT_FIELDS = new Set(["date", "time"]);
@@ -20,7 +21,12 @@ function normalizeDate(value) {
     throw new TypeError("Date must use the YYYY-MM-DD format.");
   }
 
-  const match = value.trim().match(ISO_DATE_PATTERN);
+  const text = value.trim();
+  const isoMatch = text.match(ISO_DATE_PATTERN);
+  const localMatch = text.match(LOCAL_DATE_PATTERN);
+  const match = isoMatch || (localMatch
+    ? [localMatch[0], localMatch[3], localMatch[2], localMatch[1]]
+    : null);
   if (!match) {
     throw new TypeError("Date must use the YYYY-MM-DD format.");
   }
@@ -66,7 +72,10 @@ function normalizeTime(value) {
 }
 
 function normalizeNumber(value, fieldName, minimum, maximum) {
-  const parsed = typeof value === "number" ? value : Number(value);
+  const normalizedValue = typeof value === "string" && value.includes(",") && !value.includes(".")
+    ? value.replace(",", ".")
+    : value;
+  const parsed = typeof normalizedValue === "number" ? normalizedValue : Number(normalizedValue);
   if (!Number.isFinite(parsed) || parsed < minimum || parsed > maximum) {
     throw new TypeError(`${fieldName} must be between ${minimum} and ${maximum}.`);
   }

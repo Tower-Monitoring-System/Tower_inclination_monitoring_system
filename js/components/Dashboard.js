@@ -13,6 +13,7 @@ export class Dashboard extends EventTarget {
     this.resizeTimer = null;
     this.revealTimer = null;
     this.activeView = "Towers";
+    this.registeredTowerCount = null;
     this.alertPanel = new AlertPanel(this.document);
     this.elements = this.collectElements();
 
@@ -158,7 +159,15 @@ export class Dashboard extends EventTarget {
       return;
     }
 
-    this.setText("sidebarTowerCount", summary.totalTowers);
+    this.setText(
+      "sidebarTowerCount",
+      this.registeredTowerCount === null ? summary.totalTowers : this.registeredTowerCount
+    );
+  }
+
+  updateTowerRegistry(towers) {
+    this.registeredTowerCount = Array.isArray(towers) ? towers.length : 0;
+    this.setText("sidebarTowerCount", this.registeredTowerCount);
   }
 
   updateAlertSummary(summary) {
