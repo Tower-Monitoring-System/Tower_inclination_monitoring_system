@@ -311,14 +311,14 @@ export class AlertsPage {
     }
     if (this.error && this.alerts.length === 0) {
       this.elements.tableBody.replaceChildren(
-        this.createStateRow("error", "Alerts could not be loaded", "Use Try again when the sensor-data connection is available.")
+        this.createStateRow("error", "Alerts could not be loaded", "Use Try again when the sensor-data connection is available")
       );
       this.renderPagination(filtered.length, pageData);
       return;
     }
     if (this.alerts.length === 0) {
       this.elements.tableBody.replaceChildren(
-        this.createStateRow("empty", "No alerts detected", "All validated battery and inclination readings are within configured thresholds.")
+        this.createStateRow("empty", "No alerts detected", "All validated battery and inclination readings are within configured thresholds")
       );
       this.renderPagination(filtered.length, pageData);
       return;
