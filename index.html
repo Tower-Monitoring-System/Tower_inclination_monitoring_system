@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="./css/dashboard.css?v=20260824.14" />
   <link rel="stylesheet" href="./css/list.css?v=20260824.6" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.3" />
-  <link rel="stylesheet" href="./css/towers.css?v=20260824.4" />
+  <link rel="stylesheet" href="./css/towers.css?v=20260825.1" />
   <link rel="stylesheet" href="./css/settings.css?v=20260824.4" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
@@ -336,14 +336,33 @@
                     <div class="total"><dt>Resultant</dt><dd id="towerVectorResultant">—</dd></div>
                   </dl>
                   <div class="tower-canvas-wrap tower-vector-wrap">
-                    <canvas id="towerVectorCanvas" aria-label="Three-axis visualization of the selected tower orientation"></canvas>
+                    <div class="tower-vector-controls" role="group" aria-label="Rotate the 3D view around the Z axis">
+                      <button type="button" id="towerVectorRotateLeft" aria-label="Rotate view 15 degrees counterclockwise" title="Rotate left 15°">−</button>
+                      <label class="tower-vector-rotation" for="towerVectorAzimuth">
+                        <span>View around Z</span>
+                        <input id="towerVectorAzimuth" type="range" min="0" max="359" step="1" value="35" aria-label="View angle around the Z axis" />
+                        <output id="towerVectorAzimuthValue" for="towerVectorAzimuth">35°</output>
+                      </label>
+                      <button type="button" id="towerVectorRotateRight" aria-label="Rotate view 15 degrees clockwise" title="Rotate right 15°">+</button>
+                      <button class="tower-vector-reset" type="button" id="towerVectorResetView" aria-label="Reset 3D view" title="Reset view">
+                        <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+                      </button>
+                    </div>
+                    <canvas
+                      id="towerVectorCanvas"
+                      tabindex="0"
+                      aria-describedby="towerVectorInteractionHint"
+                      aria-label="Interactive three-axis visualization of the selected tower orientation"
+                    ></canvas>
+                    <p class="tower-vector-interaction-hint" id="towerVectorInteractionHint">Drag horizontally or use ← → to rotate 360° around Z</p>
                     <p class="tower-chart-fallback" id="towerVectorFallback" hidden></p>
                     <div class="tower-chart-loading" id="towerVectorLoading" aria-hidden="true" hidden><span></span><p>Updating orientation…</p></div>
                   </div>
                   <dl class="tower-orientation-summary">
                     <div><dt>Direction</dt><dd id="towerDirection">No direction</dd></div>
                     <div><dt>Tilt Angle</dt><dd id="towerAngle">—</dd></div>
-                    <small><i></i>Solid vector: current position<br /><b></b>Dashed line: ideal vertical</small>
+                    <div><dt>Tilt Status</dt><dd class="tower-tilt-assessment offline" id="towerTiltAssessment">Unavailable</dd></div>
+                    <small><i></i>Solid vector: current position<br /><b></b>Dashed line: ideal vertical<br /><span>Small tilts are visually amplified; the numeric angle is exact.</span></small>
                   </dl>
                 </div>
               </article>
@@ -819,6 +838,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260824.12"></script>
+  <script type="module" src="./js/app.js?v=20260825.1"></script>
 </body>
 </html>

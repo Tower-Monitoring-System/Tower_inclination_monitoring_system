@@ -4,8 +4,16 @@ const COLORS = Object.freeze({
   x: "#176ff2",
   y: "#14833b",
   z: "#7b24d6",
-  ideal: "#9aa6b4",
-  grid: "#e8edf4"
+  ideal: "#8c9aaa",
+  grid: "#e2eaf3"
+});
+
+const VIEW = Object.freeze({
+  defaultAzimuth: 35,
+  keyboardStep: 5,
+  buttonStep: 15,
+  fullRotation: 360,
+  groundDepth: 0.38
 });
 
 function viewModelSignature(viewModel) {
@@ -15,17 +23,101 @@ function viewModelSignature(viewModel) {
     : "empty";
 }
 
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function toRadians(degrees) {
+  return (degrees * Math.PI) / 180;
+}
+
+function normalizeDegrees(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    return VIEW.defaultAzimuth;
+  }
+  return ((number % VIEW.fullRotation) + VIEW.fullRotation) % VIEW.fullRotation;
+}
+
+function visualTiltDegrees(actualTilt) {
+  if (actualTilt < 0.05) {
+    return actualTilt;
+  }
+  if (actualTilt <= 2) {
+    return 2 + (actualTilt * 3);
+  }
+  if (actualTilt < 10) {
+    return 8 + ((actualTilt - 2) * 0.25);
+  }
+  return Math.min(70, actualTilt);
+}
+
+function statusColor(total) {
+  if (total >= WARNING_THRESHOLDS.alert) {
+    return "#d92e46";
+  }
+  if (total >= WARNING_THRESHOLDS.warning) {
+    return "#e7860b";
+  }
+  return COLORS.z;
+}
+
 export class TowerVectorChart {
   constructor(documentRef = document, browserWindow = window) {
     this.document = documentRef;
     this.window = browserWindow;
     this.canvas = documentRef.getElementById("towerVectorCanvas");
     this.fallback = documentRef.getElementById("towerVectorFallback");
+    this.controls = {
+      rotateLeft: documentRef.getElementById("towerVectorRotateLeft"),
+      rotateRight: documentRef.getElementById("towerVectorRotateRight"),
+      slider: documentRef.getElementById("towerVectorAzimuth"),
+      output: documentRef.getElementById("towerVectorAzimuthValue"),
+      reset: documentRef.getElementById("towerVectorResetView")
+    };
     this.viewModel = null;
+    this.period = "day";
     this.renderSignature = "";
+    this.viewAzimuthDegrees = VIEW.defaultAzimuth;
+    this.pointerDrag = null;
     this.drawFrame = null;
     this.resizeObserver = null;
+    this.abortController = new this.window.AbortController();
+
+    this.bindInteraction();
+    this.syncControls();
+    this.updateControlAvailability(false);
     this.observeSize();
+  }
+
+  listen(element, eventName, callback, options = {}) {
+    element?.addEventListener(eventName, callback, {
+      ...options,
+      signal: this.abortController.signal
+    });
+  }
+
+  bindInteraction() {
+    this.listen(this.controls.rotateLeft, "click", () => {
+      this.setViewAzimuth(this.viewAzimuthDegrees - VIEW.buttonStep);
+    });
+    this.listen(this.controls.rotateRight, "click", () => {
+      this.setViewAzimuth(this.viewAzimuthDegrees + VIEW.buttonStep);
+    });
+    this.listen(this.controls.reset, "click", () => {
+      this.setViewAzimuth(VIEW.defaultAzimuth);
+      this.canvas?.focus({ preventScroll: true });
+    });
+    this.listen(this.controls.slider, "input", (event) => {
+      this.setViewAzimuth(event.target.value);
+    });
+
+    this.listen(this.canvas, "pointerdown", (event) => this.startPointerDrag(event));
+    this.listen(this.canvas, "pointermove", (event) => this.movePointerDrag(event));
+    this.listen(this.canvas, "pointerup", (event) => this.endPointerDrag(event));
+    this.listen(this.canvas, "pointercancel", (event) => this.endPointerDrag(event));
+    this.listen(this.canvas, "lostpointercapture", () => this.clearPointerDrag());
+    this.listen(this.canvas, "keydown", (event) => this.handleKeydown(event));
   }
 
   observeSize() {
@@ -39,18 +131,135 @@ export class TowerVectorChart {
   }
 
   render(viewModel, options = {}) {
-    const period = ["day", "month", "custom"].includes(options.period) ? options.period : "day";
-    const nextSignature = `${period}|${viewModelSignature(viewModel)}`;
+    this.period = ["day", "month", "custom"].includes(options.period) ? options.period : "day";
+    this.viewModel = viewModel;
+    this.updateControlAvailability(Boolean(viewModel?.latest));
+    this.updateCanvasLabel();
+
+    const nextSignature = `${this.period}|${viewModelSignature(viewModel)}`;
     if (nextSignature === this.renderSignature) {
       return;
     }
-    this.viewModel = viewModel;
     this.renderSignature = nextSignature;
-    this.canvas?.setAttribute(
-      "aria-label",
-      `Three-axis orientation for the selected ${period} period`
-    );
     this.requestDraw();
+  }
+
+  setViewAzimuth(value) {
+    const nextValue = normalizeDegrees(value);
+    if (Math.abs(nextValue - this.viewAzimuthDegrees) < 0.01) {
+      this.syncControls();
+      return;
+    }
+    this.viewAzimuthDegrees = nextValue;
+    this.syncControls();
+    this.updateCanvasLabel();
+    this.requestDraw();
+  }
+
+  syncControls() {
+    const displayValue = Math.round(normalizeDegrees(this.viewAzimuthDegrees)) % VIEW.fullRotation;
+    if (this.controls.slider) {
+      this.controls.slider.value = String(displayValue);
+      this.controls.slider.setAttribute("aria-valuetext", `${displayValue} degrees around the Z axis`);
+    }
+    if (this.controls.output) {
+      const text = `${displayValue}°`;
+      this.controls.output.value = text;
+      this.controls.output.textContent = text;
+    }
+  }
+
+  updateControlAvailability(available) {
+    [
+      this.controls.rotateLeft,
+      this.controls.rotateRight,
+      this.controls.slider,
+      this.controls.reset
+    ].forEach((control) => {
+      if (control) {
+        control.disabled = !available;
+      }
+    });
+  }
+
+  updateCanvasLabel() {
+    if (!this.canvas) {
+      return;
+    }
+    const angle = Math.round(this.viewAzimuthDegrees) % VIEW.fullRotation;
+    const tilt = Number.isFinite(this.viewModel?.resultant)
+      ? `${this.viewModel.resultant.toFixed(2)} degrees`
+      : "unavailable";
+    this.canvas.setAttribute(
+      "aria-label",
+      `Interactive three-axis orientation for the selected ${this.period} period. Tilt ${tilt}. View ${angle} degrees around Z. Drag horizontally or use the left and right arrow keys to rotate.`
+    );
+  }
+
+  startPointerDrag(event) {
+    if (!this.viewModel?.latest || event.button !== 0 || event.isPrimary === false) {
+      return;
+    }
+    this.pointerDrag = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startAzimuth: this.viewAzimuthDegrees
+    };
+    this.canvas.classList.add("is-dragging");
+    this.canvas.focus({ preventScroll: true });
+    try {
+      this.canvas.setPointerCapture?.(event.pointerId);
+    } catch (error) {
+      this.window.console.debug("Pointer capture is unavailable for the orientation chart.", error);
+    }
+    event.preventDefault();
+  }
+
+  movePointerDrag(event) {
+    if (!this.pointerDrag || event.pointerId !== this.pointerDrag.pointerId) {
+      return;
+    }
+    const width = Math.max(1, this.canvas.getBoundingClientRect().width);
+    const deltaDegrees = ((event.clientX - this.pointerDrag.startX) / width) * VIEW.fullRotation;
+    this.setViewAzimuth(this.pointerDrag.startAzimuth + deltaDegrees);
+    event.preventDefault();
+  }
+
+  endPointerDrag(event) {
+    if (!this.pointerDrag || event.pointerId !== this.pointerDrag.pointerId) {
+      return;
+    }
+    try {
+      if (this.canvas.hasPointerCapture?.(event.pointerId)) {
+        this.canvas.releasePointerCapture(event.pointerId);
+      }
+    } catch (error) {
+      this.window.console.debug("Pointer capture could not be released.", error);
+    }
+    this.clearPointerDrag();
+  }
+
+  clearPointerDrag() {
+    this.pointerDrag = null;
+    this.canvas?.classList.remove("is-dragging");
+  }
+
+  handleKeydown(event) {
+    const changes = {
+      ArrowLeft: -VIEW.keyboardStep,
+      ArrowRight: VIEW.keyboardStep,
+      PageDown: -VIEW.buttonStep,
+      PageUp: VIEW.buttonStep
+    };
+    if (Object.prototype.hasOwnProperty.call(changes, event.key)) {
+      this.setViewAzimuth(this.viewAzimuthDegrees + changes[event.key]);
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "Home") {
+      this.setViewAzimuth(VIEW.defaultAzimuth);
+      event.preventDefault();
+    }
   }
 
   requestDraw() {
@@ -101,104 +310,156 @@ export class TowerVectorChart {
 
   drawScene(context, width, height) {
     const reading = this.viewModel.latest;
-    const total = Math.min(89.5, this.viewModel.resultant);
-    const origin = { x: width * 0.5, y: height * 0.79 };
-    const horizontalScale = Math.min(width * 0.34, 205);
-    const verticalScale = Math.min(height * 0.58, 230);
-    const xAxis = { x: horizontalScale, y: -horizontalScale * 0.1 };
-    const yAxis = { x: horizontalScale * 0.62, y: horizontalScale * 0.34 };
+    const total = clamp(Number(this.viewModel.resultant) || 0, 0, 89.5);
+    const origin = { x: width * 0.5, y: height * 0.76 };
+    const groundScale = Math.max(62, Math.min(width * 0.27, height * 0.3, 155));
+    const verticalScale = Math.max(125, Math.min(width * 0.42, height * 0.56, 225));
+    const project = this.createProjector(origin, groundScale, verticalScale);
 
-    this.drawGroundGrid(context, origin, xAxis, yAxis);
-    this.drawAxis(context, origin, { x: origin.x + xAxis.x, y: origin.y + xAxis.y }, COLORS.x, "+X");
-    this.drawAxis(context, origin, { x: origin.x - xAxis.x, y: origin.y - xAxis.y }, COLORS.x, "−X");
-    this.drawAxis(context, origin, { x: origin.x + yAxis.x, y: origin.y + yAxis.y }, COLORS.y, "+Y");
-    this.drawAxis(context, origin, { x: origin.x - yAxis.x, y: origin.y - yAxis.y }, COLORS.y, "−Y");
-    this.drawAxis(context, origin, { x: origin.x, y: origin.y - verticalScale }, COLORS.ideal, "+Z");
-    this.drawAxis(context, origin, { x: origin.x, y: origin.y + Math.min(54, height * 0.14) }, COLORS.ideal, "−Z");
+    this.drawGroundGrid(context, project);
+    this.drawCompass(context, project);
+    this.drawAxis(context, origin, project({ x: 1.12 }), COLORS.x, "+X");
+    this.drawAxis(context, origin, project({ x: -1.12 }), COLORS.x, "−X");
+    this.drawAxis(context, origin, project({ y: 1.12 }), COLORS.y, "+Y");
+    this.drawAxis(context, origin, project({ y: -1.12 }), COLORS.y, "−Y");
+    this.drawAxis(context, origin, project({ z: -0.18 }), COLORS.ideal, "−Z");
 
-    const idealEnd = { x: origin.x, y: origin.y - verticalScale };
+    const idealEnd = project({ z: 1 });
+    this.drawIdealVertical(context, origin, idealEnd);
+
+    const planarMagnitude = Math.hypot(reading.x, reading.y);
+    const sensorDirection = planarMagnitude > 0.0001
+      ? Math.atan2(reading.y, reading.x)
+      : 0;
+    const directionAzimuth = sensorDirection + toRadians(reading.z);
+    const displayedTilt = toRadians(visualTiltDegrees(total));
+    const horizontal = Math.sin(displayedTilt);
+    const actualWorld = {
+      x: Math.cos(directionAzimuth) * horizontal,
+      y: Math.sin(directionAzimuth) * horizontal,
+      z: Math.cos(displayedTilt)
+    };
+    const actualGround = { x: actualWorld.x, y: actualWorld.y, z: 0 };
+    const actualEnd = project(actualWorld);
+    const groundEnd = project(actualGround);
+    const vectorColor = statusColor(total);
+
+    if (total >= 0.05) {
+      this.drawDirectionGuide(context, origin, project, directionAzimuth, vectorColor);
+      this.drawTiltSector(context, origin, project, directionAzimuth, displayedTilt, vectorColor);
+      this.drawProjection(context, origin, groundEnd, actualEnd, vectorColor);
+    }
+    this.drawTowerVector(context, origin, actualEnd, vectorColor);
+    this.drawTiltTag(context, width, height, actualEnd, vectorColor);
+
+    context.save();
+    context.fillStyle = "#526174";
+    context.beginPath();
+    context.arc(origin.x, origin.y, 6, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = "#ffffff";
+    context.lineWidth = 2;
+    context.stroke();
+    context.restore();
+  }
+
+  createProjector(origin, groundScale, verticalScale) {
+    const camera = toRadians(this.viewAzimuthDegrees);
+    const sine = Math.sin(camera);
+    const cosine = Math.cos(camera);
+    return ({ x = 0, y = 0, z = 0 }) => ({
+      x: origin.x + ((-sine * x) + (cosine * y)) * groundScale,
+      y: origin.y + ((cosine * x) + (sine * y)) * groundScale * VIEW.groundDepth - (z * verticalScale)
+    });
+  }
+
+  drawGroundGrid(context, project) {
+    const corners = [
+      project({ x: -1, y: -1 }),
+      project({ x: 1, y: -1 }),
+      project({ x: 1, y: 1 }),
+      project({ x: -1, y: 1 })
+    ];
+    context.save();
+    context.fillStyle = "rgba(242, 247, 253, 0.62)";
+    context.beginPath();
+    corners.forEach((point, index) => {
+      if (index === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    });
+    context.closePath();
+    context.fill();
+
+    context.strokeStyle = COLORS.grid;
+    context.lineWidth = 1;
+    for (let index = -4; index <= 4; index += 1) {
+      const position = index / 4;
+      const xStart = project({ x: -1, y: position });
+      const xEnd = project({ x: 1, y: position });
+      const yStart = project({ x: position, y: -1 });
+      const yEnd = project({ x: position, y: 1 });
+      context.beginPath();
+      context.moveTo(xStart.x, xStart.y);
+      context.lineTo(xEnd.x, xEnd.y);
+      context.stroke();
+      context.beginPath();
+      context.moveTo(yStart.x, yStart.y);
+      context.lineTo(yEnd.x, yEnd.y);
+      context.stroke();
+    }
+    context.restore();
+  }
+
+  drawCompass(context, project) {
+    context.save();
+    context.strokeStyle = "#ccd9e8";
+    context.lineWidth = 1.2;
+    context.setLineDash([3, 4]);
+    context.beginPath();
+    for (let index = 0; index <= 64; index += 1) {
+      const angle = (index / 64) * Math.PI * 2;
+      const point = project({ x: Math.cos(angle) * 0.93, y: Math.sin(angle) * 0.93 });
+      if (index === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    }
+    context.stroke();
+    context.restore();
+  }
+
+  drawIdealVertical(context, origin, idealEnd) {
     context.save();
     context.strokeStyle = COLORS.ideal;
-    context.lineWidth = 1.5;
+    context.fillStyle = COLORS.ideal;
+    context.lineWidth = 1.6;
     context.setLineDash([6, 6]);
     context.beginPath();
     context.moveTo(origin.x, origin.y);
     context.lineTo(idealEnd.x, idealEnd.y);
     context.stroke();
     context.setLineDash([]);
-    context.fillStyle = "#7a8798";
-    context.font = '600 10px Inter, "Segoe UI", sans-serif';
+    context.beginPath();
+    context.arc(idealEnd.x, idealEnd.y, 3.5, 0, Math.PI * 2);
+    context.fill();
+    context.font = '700 10px Inter, "Segoe UI", sans-serif';
     context.textAlign = "left";
-    context.fillText("Ideal vertical", idealEnd.x + 9, idealEnd.y + 11);
-    context.restore();
-
-    const tiltRadians = (total * Math.PI) / 180;
-    const baseAzimuth = Math.atan2(reading.y, reading.x || Number.EPSILON);
-    const azimuth = baseAzimuth + (reading.z * Math.PI) / 180;
-    const horizontal = Math.sin(tiltRadians) * verticalScale;
-    const vertical = Math.cos(tiltRadians) * verticalScale;
-    const actualEnd = {
-      x: origin.x + Math.cos(azimuth) * horizontal + Math.sin(azimuth) * horizontal * 0.38,
-      y: origin.y - vertical + Math.sin(azimuth) * horizontal * 0.34
-    };
-
-    const vectorColor = total >= WARNING_THRESHOLDS.alert
-      ? "#d92e46"
-      : total >= WARNING_THRESHOLDS.warning
-        ? "#e7860b"
-        : COLORS.z;
-
-    context.save();
-    context.strokeStyle = vectorColor;
-    context.fillStyle = vectorColor;
-    context.lineWidth = 5;
-    context.lineCap = "round";
-    context.shadowColor = `${vectorColor}38`;
-    context.shadowBlur = 10;
-    context.beginPath();
-    context.moveTo(origin.x, origin.y);
-    context.lineTo(actualEnd.x, actualEnd.y);
-    context.stroke();
-    context.shadowBlur = 0;
-    context.beginPath();
-    context.arc(actualEnd.x, actualEnd.y, 6, 0, Math.PI * 2);
-    context.fill();
-    context.restore();
-
-    this.drawProjection(context, actualEnd, origin, vectorColor);
-    this.drawAngle(context, origin, idealEnd, actualEnd, total, vectorColor);
-
-    context.beginPath();
-    context.fillStyle = "#526174";
-    context.arc(origin.x, origin.y, 6, 0, Math.PI * 2);
-    context.fill();
-  }
-
-  drawGroundGrid(context, origin, xAxis, yAxis) {
-    context.save();
-    context.strokeStyle = COLORS.grid;
-    context.lineWidth = 1;
-    for (let index = -4; index <= 4; index += 1) {
-      const ratio = index / 4;
-      context.beginPath();
-      context.moveTo(origin.x - xAxis.x + yAxis.x * ratio, origin.y - xAxis.y + yAxis.y * ratio);
-      context.lineTo(origin.x + xAxis.x + yAxis.x * ratio, origin.y + xAxis.y + yAxis.y * ratio);
-      context.stroke();
-      context.beginPath();
-      context.moveTo(origin.x - yAxis.x + xAxis.x * ratio, origin.y - yAxis.y + xAxis.y * ratio);
-      context.lineTo(origin.x + yAxis.x + xAxis.x * ratio, origin.y + yAxis.y + xAxis.y * ratio);
-      context.stroke();
-    }
+    context.fillText("Ideal vertical (+Z)", idealEnd.x + 8, idealEnd.y + 4);
     context.restore();
   }
 
   drawAxis(context, start, end, color, label) {
     const angle = Math.atan2(end.y - start.y, end.x - start.x);
     const headSize = 7;
+    const isVertical = Math.abs(end.x - start.x) < 8;
     context.save();
     context.strokeStyle = color;
     context.fillStyle = color;
-    context.lineWidth = 1.8;
+    context.lineWidth = 1.7;
     context.beginPath();
     context.moveTo(start.x, start.y);
     context.lineTo(end.x, end.y);
@@ -210,42 +471,150 @@ export class TowerVectorChart {
     context.closePath();
     context.fill();
     context.font = '800 11px Inter, "Segoe UI", sans-serif';
-    context.textAlign = end.x >= start.x ? "left" : "right";
-    context.fillText(label, end.x + (end.x >= start.x ? 7 : -7), end.y + (end.y < start.y ? -7 : 12));
+    context.textAlign = isVertical ? "center" : (end.x >= start.x ? "left" : "right");
+    context.fillText(
+      label,
+      end.x + (isVertical ? 0 : (end.x >= start.x ? 7 : -7)),
+      end.y + (end.y < start.y ? -7 : 12)
+    );
     context.restore();
   }
 
-  drawProjection(context, actualEnd, origin, color) {
+  drawDirectionGuide(context, origin, project, directionAzimuth, color) {
+    const directionEnd = project({
+      x: Math.cos(directionAzimuth) * 0.74,
+      y: Math.sin(directionAzimuth) * 0.74
+    });
+    const angle = Math.atan2(directionEnd.y - origin.y, directionEnd.x - origin.x);
     context.save();
-    context.strokeStyle = `${color}78`;
-    context.lineWidth = 1.2;
-    context.setLineDash([5, 5]);
+    context.strokeStyle = `${color}9c`;
+    context.fillStyle = color;
+    context.lineWidth = 1.5;
+    context.setLineDash([5, 4]);
     context.beginPath();
-    context.moveTo(actualEnd.x, actualEnd.y);
-    context.lineTo(actualEnd.x, origin.y);
-    context.lineTo(origin.x, origin.y);
+    context.moveTo(origin.x, origin.y);
+    context.lineTo(directionEnd.x, directionEnd.y);
     context.stroke();
+    context.setLineDash([]);
+    context.beginPath();
+    context.moveTo(directionEnd.x, directionEnd.y);
+    context.lineTo(directionEnd.x - Math.cos(angle - 0.48) * 7, directionEnd.y - Math.sin(angle - 0.48) * 7);
+    context.lineTo(directionEnd.x - Math.cos(angle + 0.48) * 7, directionEnd.y - Math.sin(angle + 0.48) * 7);
+    context.closePath();
+    context.fill();
+    context.font = '700 9px Inter, "Segoe UI", sans-serif';
+    context.textAlign = directionEnd.x >= origin.x ? "left" : "right";
+    context.fillText(
+      "Tilt direction",
+      directionEnd.x + (directionEnd.x >= origin.x ? 7 : -7),
+      directionEnd.y - 5
+    );
     context.restore();
   }
 
-  drawAngle(context, origin, idealEnd, actualEnd, total, color) {
-    if (total < 0.05) {
-      return;
+  drawTiltSector(context, origin, project, directionAzimuth, tiltRadians, color) {
+    const radius = 0.42;
+    const points = [];
+    for (let index = 0; index <= 20; index += 1) {
+      const angle = tiltRadians * (index / 20);
+      points.push(project({
+        x: Math.cos(directionAzimuth) * Math.sin(angle) * radius,
+        y: Math.sin(directionAzimuth) * Math.sin(angle) * radius,
+        z: Math.cos(angle) * radius
+      }));
     }
-    const idealAngle = Math.atan2(idealEnd.y - origin.y, idealEnd.x - origin.x);
-    const actualAngle = Math.atan2(actualEnd.y - origin.y, actualEnd.x - origin.x);
-    const radius = Math.min(50, 29 + total * 0.28);
     context.save();
+    context.fillStyle = `${color}18`;
     context.strokeStyle = color;
     context.lineWidth = 1.5;
     context.beginPath();
-    context.arc(origin.x, origin.y, radius, idealAngle, actualAngle, actualAngle < idealAngle);
+    context.moveTo(origin.x, origin.y);
+    points.forEach((point) => context.lineTo(point.x, point.y));
+    context.closePath();
+    context.fill();
+    context.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) {
+        context.moveTo(point.x, point.y);
+      } else {
+        context.lineTo(point.x, point.y);
+      }
+    });
     context.stroke();
-    const middle = (idealAngle + actualAngle) / 2;
+    context.restore();
+  }
+
+  drawProjection(context, origin, groundEnd, actualEnd, color) {
+    context.save();
+    context.strokeStyle = `${color}82`;
+    context.lineWidth = 1.2;
+    context.setLineDash([5, 5]);
+    context.beginPath();
+    context.moveTo(origin.x, origin.y);
+    context.lineTo(groundEnd.x, groundEnd.y);
+    context.lineTo(actualEnd.x, actualEnd.y);
+    context.stroke();
+    context.setLineDash([]);
+    context.fillStyle = `${color}b8`;
+    context.beginPath();
+    context.arc(groundEnd.x, groundEnd.y, 3.5, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
+
+  drawTowerVector(context, origin, actualEnd, color) {
+    const gradient = context.createLinearGradient(origin.x, origin.y, actualEnd.x, actualEnd.y);
+    gradient.addColorStop(0, `${color}bf`);
+    gradient.addColorStop(1, color);
+    context.save();
+    context.strokeStyle = `${color}24`;
+    context.lineWidth = 11;
+    context.lineCap = "round";
+    context.beginPath();
+    context.moveTo(origin.x, origin.y);
+    context.lineTo(actualEnd.x, actualEnd.y);
+    context.stroke();
+    context.strokeStyle = gradient;
+    context.lineWidth = 5;
+    context.shadowColor = `${color}55`;
+    context.shadowBlur = 10;
+    context.beginPath();
+    context.moveTo(origin.x, origin.y);
+    context.lineTo(actualEnd.x, actualEnd.y);
+    context.stroke();
+    context.shadowBlur = 0;
+    context.fillStyle = "#ffffff";
+    context.beginPath();
+    context.arc(actualEnd.x, actualEnd.y, 7, 0, Math.PI * 2);
+    context.fill();
+    context.strokeStyle = color;
+    context.lineWidth = 4;
+    context.stroke();
+    context.restore();
+  }
+
+  drawTiltTag(context, width, height, actualEnd, color) {
+    const text = `Tilt ${this.viewModel.resultant.toFixed(2)}°`;
+    context.save();
+    context.font = '800 10px Inter, "Segoe UI", sans-serif';
+    const tagWidth = Math.ceil(context.measureText(text).width) + 16;
+    const tagHeight = 23;
+    const preferredX = actualEnd.x <= width * 0.55
+      ? actualEnd.x - tagWidth - 10
+      : actualEnd.x + 10;
+    const x = clamp(preferredX, 5, width - tagWidth - 5);
+    const y = clamp(actualEnd.y - 12, 56, height - tagHeight - 26);
+    context.fillStyle = "rgba(255, 255, 255, 0.94)";
+    context.strokeStyle = `${color}65`;
+    context.lineWidth = 1;
+    context.beginPath();
+    context.roundRect(x, y, tagWidth, tagHeight, 7);
+    context.fill();
+    context.stroke();
     context.fillStyle = color;
-    context.font = '800 12px Inter, "Segoe UI", sans-serif';
     context.textAlign = "center";
-    context.fillText(`${this.viewModel.resultant.toFixed(2)}°`, origin.x + Math.cos(middle) * (radius + 18), origin.y + Math.sin(middle) * (radius + 18));
+    context.textBaseline = "middle";
+    context.fillText(text, x + tagWidth / 2, y + tagHeight / 2 + 0.5);
     context.restore();
   }
 
@@ -265,7 +634,9 @@ export class TowerVectorChart {
   }
 
   destroy() {
+    this.abortController.abort();
     this.resizeObserver?.disconnect();
+    this.clearPointerDrag();
     if (this.drawFrame !== null) {
       this.window.cancelAnimationFrame(this.drawFrame);
     }

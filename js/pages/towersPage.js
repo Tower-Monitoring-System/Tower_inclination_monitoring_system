@@ -1,5 +1,5 @@
 import { TowerTrendChart } from "../components/TowerTrendChart.js?v=20260824.3";
-import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260824.3";
+import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260825.1";
 import { TOWERS_CONFIG } from "../core/config.js?v=20260824.2";
 import {
   createTowerViewModel,
@@ -110,6 +110,7 @@ export class TowersPage {
       vectorResultant: byId("towerVectorResultant"),
       direction: byId("towerDirection"),
       angle: byId("towerAngle"),
+      assessment: byId("towerTiltAssessment"),
       lastReading: byId("towerLastReading"),
       liveStatus: byId("towerLiveStatus")
     };
@@ -533,6 +534,11 @@ export class TowersPage {
     this.elements.vectorResultant.textContent = latest ? `${viewModel.resultant.toFixed(2)}°` : "—";
     this.elements.direction.textContent = viewModel?.direction || "No direction";
     this.elements.angle.textContent = latest ? `${viewModel.resultant.toFixed(2)}°` : "—";
+    const status = latest ? (viewModel?.status || "offline") : "offline";
+    this.elements.assessment.className = `tower-tilt-assessment ${status}`;
+    this.elements.assessment.textContent = latest
+      ? (STATUS_LABELS[status] || "Unavailable")
+      : "Unavailable";
     this.elements.lastReading.textContent = latest?.timestamp
       ? `Last reading ${READING_TIME.format(new Date(latest.timestamp))}`
       : "No sensor reading received yet";

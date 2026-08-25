@@ -774,8 +774,137 @@
 .tower-axis-values .total dd { color: #7b24d6; }
 
 .tower-vector-wrap {
+  isolation: isolate;
   height: 400px;
   min-height: 0;
+}
+
+.tower-vector-wrap canvas {
+  cursor: grab;
+  touch-action: none;
+}
+
+.tower-vector-wrap canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.tower-vector-wrap canvas:focus-visible {
+  border-radius: 10px;
+  outline: 3px solid rgba(23, 111, 242, 0.3);
+  outline-offset: -4px;
+}
+
+.tower-vector-controls {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 50%;
+  display: grid;
+  grid-template-columns: 31px minmax(138px, 1fr) 31px 31px;
+  align-items: center;
+  gap: 5px;
+  width: min(420px, calc(100% - 16px));
+  padding: 5px;
+  border: 1px solid rgba(202, 215, 231, 0.92);
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 18px rgba(22, 53, 88, 0.09);
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+}
+
+.tower-vector-controls button {
+  display: inline-grid;
+  width: 31px;
+  height: 31px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #cbd9e9;
+  border-radius: 8px;
+  color: #35506f;
+  background: #fff;
+  font: 800 0.83rem/1 Inter, "Segoe UI", sans-serif;
+  cursor: pointer;
+  transition: border-color 160ms ease, color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.tower-vector-controls button:hover:not(:disabled) {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: #f2f7ff;
+  transform: translateY(-1px);
+}
+
+.tower-vector-controls button:focus-visible,
+.tower-vector-rotation input:focus-visible {
+  outline: 3px solid rgba(23, 111, 242, 0.22);
+  outline-offset: 1px;
+}
+
+.tower-vector-controls button:disabled,
+.tower-vector-rotation input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.tower-vector-controls button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.tower-vector-rotation {
+  display: grid;
+  grid-template-columns: auto minmax(52px, 1fr) 32px;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.tower-vector-rotation span,
+.tower-vector-rotation output {
+  color: #52657d;
+  font-size: 0.52rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.tower-vector-rotation input {
+  width: 100%;
+  min-width: 0;
+  accent-color: var(--primary);
+  cursor: ew-resize;
+}
+
+.tower-vector-rotation output {
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tower-vector-interaction-hint {
+  position: absolute;
+  z-index: 3;
+  right: 8px;
+  bottom: 5px;
+  left: 8px;
+  width: fit-content;
+  max-width: calc(100% - 16px);
+  margin: 0 auto;
+  padding: 4px 8px;
+  border: 1px solid rgba(215, 225, 237, 0.9);
+  border-radius: 999px;
+  color: #637893;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 0.48rem;
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
 }
 
 .tower-orientation-summary {
@@ -792,6 +921,34 @@
 .tower-orientation-summary > div:first-child dd {
   color: #14833b;
   font-size: 0.66rem;
+}
+
+.tower-orientation-summary dd.tower-tilt-assessment {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  margin-top: 6px;
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #5f7084;
+  background: #edf2f7;
+  font-size: 0.56rem;
+  line-height: 1;
+}
+
+.tower-orientation-summary dd.tower-tilt-assessment.normal {
+  color: #087b45;
+  background: #ddf7e9;
+}
+
+.tower-orientation-summary dd.tower-tilt-assessment.warning {
+  color: #a85a00;
+  background: #fff0cf;
+}
+
+.tower-orientation-summary dd.tower-tilt-assessment.alert {
+  color: #c4253d;
+  background: #ffe3e7;
 }
 
 .tower-orientation-summary small {
@@ -816,6 +973,13 @@
   height: 0;
   border-top: 1px dashed #9aa6b4;
   background: transparent;
+}
+
+.tower-orientation-summary small span {
+  display: block;
+  margin-top: 5px;
+  color: #7a8798;
+  line-height: 1.45;
 }
 
 @media (max-width: 1500px) {
@@ -886,7 +1050,15 @@
 
   .tower-orientation-summary {
     grid-column: 1 / -1;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tower-vector-rotation span {
+    display: none;
+  }
+
+  .tower-vector-rotation {
+    grid-template-columns: minmax(52px, 1fr) 32px;
   }
 
   .tower-orientation-summary small {
@@ -945,5 +1117,19 @@
 
   .tower-orientation-summary {
     grid-column: auto;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tower-vector-controls {
+    grid-template-columns: 29px minmax(82px, 1fr) 29px 29px;
+  }
+
+  .tower-vector-controls button {
+    width: 29px;
+    height: 29px;
+  }
+
+  .tower-vector-interaction-hint {
+    font-size: 0.45rem;
   }
 }
