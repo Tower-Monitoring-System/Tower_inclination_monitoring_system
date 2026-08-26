@@ -102,9 +102,14 @@ UBaseType_t uploadWorkerMinimumFreeStack = 0;
 // ============================================================
 const time_t MINIMUM_VALID_EPOCH = 1704067200; // 2024-01-01 UTC
 const uint32_t TIME_SYNC_RETRY_INTERVAL = 60000UL;
+const char NTP_TIME_ZONE[] = "ICT-7"; // UTC+7, Viet Nam (POSIX TZ)
 bool timeSyncStarted = false;
 bool timeSyncAnnounced = false;
 uint32_t lastTimeSyncRequestAt = 0;
+
+const uint32_t OLED_SHEET_RESULT_HOLD_MS = 3000UL;
+SheetDisplayState currentSheetDisplayState = SheetDisplayState::SYNCING;
+uint32_t sheetDisplayStateChangedAt = 0;
 
 bool timeReached(uint32_t now, uint32_t target) {
   return static_cast<int32_t>(now - target) >= 0;
@@ -281,7 +286,7 @@ void maintainTimeSync() {
   const uint32_t now = millis();
   if (!timeSyncStarted ||
       now - lastTimeSyncRequestAt >= TIME_SYNC_RETRY_INTERVAL) {
-    configTime(0, 0, "time.google.com", "pool.ntp.org");
+    configTzTime(NTP_TIME_ZONE, "time.google.com", "pool.ntp.org");
     lastTimeSyncRequestAt = now;
     timeSyncStarted = true;
     Serial.println("[TIME] Dang dong bo thoi gian NTP cho HTTPS...");
@@ -294,6 +299,14 @@ uint32_t uploadRetryDelay() {
   const uint8_t exponent = failedAttempts > 4 ? 4 : failedAttempts;
   const uint32_t retryDelay = 5000UL << exponent;
   return retryDelay > 60000UL ? 60000UL : retryDelay;
+}
+
+void setSheetDisplayState(SheetDisplayState state) {
+  if (currentSheetDisplayState == state) {
+    return;
+  }
+  currentSheetDisplayState = state;
+  sheetDisplayStateChangedAt = millis();
 }
 
 void googleSheetUploadTask(void *parameter) {
@@ -393,6 +406,7 @@ void processPendingUploads() {
                   static_cast<unsigned>(minimumFreeStack));
 
     if (completedResult.success()) {
+      setSheetDisplayState(SheetDisplayState::SUCCESS);
       popReading();
       consecutiveUploadFailures = 0;
       nextUploadAttemptAt = millis() + 1000UL;
@@ -404,6 +418,7 @@ void processPendingUploads() {
     } else {
       if (completedResult.status ==
           GoogleSheetSendStatus::CONFIRMATION_PENDING) {
+        setSheetDisplayState(SheetDisplayState::SENDING);
         nextUploadAttemptAt = millis() + 3000UL;
         Serial.println(
             "[GSHEET][CONFIRM] Se chi doc lai URL xac nhan sau 3 giay; "
@@ -411,6 +426,7 @@ void processPendingUploads() {
         return;
       }
 
+      setSheetDisplayState(SheetDisplayState::ERROR);
       if (consecutiveUploadFailures < 10) {
         ++consecutiveUploadFailures;
       }
@@ -457,6 +473,7 @@ void processPendingUploads() {
   }
 
   if (!uploadWorkerHandle) {
+    setSheetDisplayState(SheetDisplayState::ERROR);
     if (now - lastUploadWaitLogAt >= 30000UL || lastUploadWaitLogAt == 0) {
       Serial.println(
           "[GSHEET][TASK][FAIL] Khong co task HTTPS; du lieu van duoc giu.");
@@ -474,11 +491,51 @@ void processPendingUploads() {
                   reading->requestId, reading->towerId,
                   static_cast<unsigned>(readingQueueCount));
   }
-  if (!startGoogleSheetUpload(*reading)) {
+  if (startGoogleSheetUpload(*reading)) {
+    setSheetDisplayState(SheetDisplayState::SENDING);
+  } else {
+    setSheetDisplayState(SheetDisplayState::ERROR);
     nextUploadAttemptAt = millis() + 5000UL;
     Serial.println(
         "[GSHEET][TASK][FAIL] Khong khoi dong duoc lan gui; se thu lai.");
   }
+}
+
+SheetDisplayState resolveSheetDisplayState() {
+  if (!googleSheet.isConfigured()) {
+    return SheetDisplayState::ERROR;
+  }
+  if (!isClockSynchronized()) {
+    return SheetDisplayState::SYNCING;
+  }
+  if (isGoogleSheetUploadBusy()) {
+    return SheetDisplayState::SENDING;
+  }
+
+  SensorReading *reading = frontReading();
+  if (reading && googleSheet.hasPendingConfirmation(*reading)) {
+    return SheetDisplayState::SENDING;
+  }
+  if (currentSheetDisplayState == SheetDisplayState::SUCCESS &&
+      millis() - sheetDisplayStateChangedAt < OLED_SHEET_RESULT_HOLD_MS) {
+    return SheetDisplayState::SUCCESS;
+  }
+  if (currentSheetDisplayState == SheetDisplayState::ERROR && reading) {
+    return SheetDisplayState::ERROR;
+  }
+  return SheetDisplayState::READY;
+}
+
+void renderMasterDashboard() {
+  MasterDashboardState dashboard = {};
+  dashboard.wifiRssi = WiFi.RSSI();
+  dashboard.loraState = LoraDisplayState::STANDBY;
+  dashboard.loraRssi = 0;
+  dashboard.nodeCount = 0;
+  dashboard.sheetState = resolveSheetDisplayState();
+  dashboard.pendingUploads = readingQueueCount;
+  dashboard.timeSynchronized = isClockSynchronized();
+  connectEffect.MasterDashboard(dashboard);
 }
 
 // ============================================================
@@ -571,7 +628,7 @@ void loop() {
       break;
 
     case WS_CONNECTED:
-      connectEffect.ConnectedEffect(ConnectionType::WIFI, WiFi.RSSI());
+      renderMasterDashboard();
       break;
 
     case WS_DISCONNECTED: {
