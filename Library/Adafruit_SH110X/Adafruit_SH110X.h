@@ -24,7 +24,7 @@
 #ifndef _Adafruit_SH110X_H_
 #define _Adafruit_SH110X_H_
 
-#include "Adafruit_GrayOLED.h"
+#include <Adafruit_GrayOLED.h>
 
 /// fit into the SH110X_ naming scheme
 #define SH110X_BLACK 0   ///< Draw 'off' pixels
