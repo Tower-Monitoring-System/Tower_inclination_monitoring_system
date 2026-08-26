@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <time.h>
 
 #include "src/OLED/Wifi_Lora_Connect_Effect.h"
 
@@ -12,6 +13,15 @@ constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;
 
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 20000UL;
 constexpr uint32_t ESP32_RESTART_TIMEOUT_MS = 50000UL;
+constexpr uint32_t CONNECTED_EFFECT_DURATION_MS = 1400UL;
+constexpr uint32_t RECONNECT_EFFECT_DURATION_MS = 900UL;
+constexpr uint32_t RESTART_EFFECT_DURATION_MS = 1000UL;
+
+constexpr long GMT_OFFSET_SECONDS = 7L * 60L * 60L;
+constexpr int DAYLIGHT_OFFSET_SECONDS = 0;
+constexpr time_t MINIMUM_VALID_NTP_TIME = 1704067200;  // 01/01/2024 UTC
+const char *NTP_SERVER_1 = "pool.ntp.org";
+const char *NTP_SERVER_2 = "time.nist.gov";
 
 Wifi_Lora_Connect_Effect connectionDisplay;
 
@@ -27,9 +37,30 @@ volatile WifiState currentWifiState = WS_CONNECTING;
 volatile bool wifiOutageActive = true;
 volatile uint32_t wifiOutageStartedAt = 0;
 volatile uint32_t lastReconnectAttemptAt = 0;
+volatile uint32_t wifiConnectedAt = 0;
+
+bool reconnectEffectActive = false;
+uint32_t reconnectEffectStartedAt = 0;
+bool restartPending = false;
+uint32_t restartEffectStartedAt = 0;
+bool ntpStarted = false;
+
+// Cac truong LoRa, node va Google Sheet da san sang de cap nhat bang du lieu
+// thuc khi cac phan do duoc tich hop. Hien tai Master chi ket noi Wi-Fi.
+MasterDashboardState masterDashboardState = {
+    0,
+    LoraDisplayState::STANDBY,
+    0,
+    0,
+    SheetDisplayState::READY,
+    0,
+    false,
+};
 
 void handleWifiReconnect();
 void handleEsp32Restart();
+void startNtpIfNeeded();
+bool isNtpTimeSynchronized();
 
 void WiFiEvent(WiFiEvent_t event) {
   const uint32_t now = millis();
@@ -58,6 +89,7 @@ void WiFiEvent(WiFiEvent_t event) {
       Serial.println(" dBm");
 
       wifiOutageActive = false;
+      wifiConnectedAt = now;
       currentWifiState = WS_CONNECTED;
       break;
 
@@ -105,19 +137,51 @@ void setup() {
 }
 
 void loop() {
+  if (restartPending) {
+    handleEsp32Restart();
+    yield();
+    return;
+  }
+
   // Lay mot ban sao de trang thai khong thay doi giua luc switch dang xu ly.
   const WifiState state = currentWifiState;
 
+  // Hieu ung reconnect duoc giu trong mot khoang ngan bang state machine,
+  // khong chan Wi-Fi hay cac tac vu khac.
+  if (reconnectEffectActive && state == WS_DISCONNECTED) {
+    const uint32_t now = millis();
+    if (now - reconnectEffectStartedAt < RECONNECT_EFFECT_DURATION_MS) {
+      connectionDisplay.Disconnect(ConnectionType::WIFI);
+      handleEsp32Restart();
+      yield();
+      return;
+    }
+    reconnectEffectActive = false;
+  }
+
   switch (state) {
     case WS_CONNECTING:
+      reconnectEffectActive = false;
       connectionDisplay.ConnectingEffect(ConnectionType::WIFI);
       // Du phong truong hop Wi-Fi bi ket o trang thai CONNECTING qua lau.
       handleEsp32Restart();
       break;
 
-    case WS_CONNECTED:
-      connectionDisplay.ConnectedEffect(ConnectionType::WIFI, WiFi.RSSI());
+    case WS_CONNECTED: {
+      reconnectEffectActive = false;
+      const int16_t wifiRssi = WiFi.RSSI();
+      startNtpIfNeeded();
+
+      // Hien thi xac nhan ket noi truoc khi chuyen sang dashboard Master.
+      if (millis() - wifiConnectedAt < CONNECTED_EFFECT_DURATION_MS) {
+        connectionDisplay.ConnectedEffect(ConnectionType::WIFI, wifiRssi);
+      } else {
+        masterDashboardState.wifiRssi = wifiRssi;
+        masterDashboardState.timeSynchronized = isNtpTimeSynchronized();
+        connectionDisplay.MasterDashboard(masterDashboardState);
+      }
       break;
+    }
 
     case WS_DISCONNECTED:
       connectionDisplay.LostConnectEffect(ConnectionType::WIFI);
@@ -126,8 +190,8 @@ void loop() {
       break;
   }
 
-  // Nhuong CPU cho Wi-Fi task; cac hieu ung OLED van hoat dong theo millis().
-  delay(1);
+  // yield() chi nhuong quyen xu ly, khong tao thoi gian cho nhu delay().
+  yield();
 }
 
 void handleWifiReconnect() {
@@ -144,25 +208,49 @@ void handleWifiReconnect() {
   connectionDisplay.Disconnect(ConnectionType::WIFI);
 
   lastReconnectAttemptAt = now;
+  reconnectEffectStartedAt = now;
+  reconnectEffectActive = true;
   WiFi.disconnect();
   WiFi.begin(ssid, password);
 }
 
 void handleEsp32Restart() {
+  const uint32_t now = millis();
+
+  if (restartPending) {
+    connectionDisplay.RestartESP32(ConnectionType::WIFI);
+    if (now - restartEffectStartedAt >= RESTART_EFFECT_DURATION_MS) {
+      Serial.flush();
+      ESP.restart();
+    }
+    return;
+  }
+
   if (!wifiOutageActive) {
     return;
   }
 
-  const uint32_t now = millis();
   if (now - wifiOutageStartedAt < ESP32_RESTART_TIMEOUT_MS) {
     return;
   }
 
   Serial.println(">> [TIMEOUT 50s] KHONG THE KET NOI. KHOI DONG LAI ESP32...");
+  restartPending = true;
+  restartEffectStartedAt = now;
   connectionDisplay.RestartESP32(ConnectionType::WIFI);
-  Serial.flush();
+}
 
-  // Giu man hinh restart du lau de nguoi dung co the nhin thay thong bao.
-  delay(1000);
-  ESP.restart();
+void startNtpIfNeeded() {
+  if (ntpStarted) {
+    return;
+  }
+
+  configTime(GMT_OFFSET_SECONDS, DAYLIGHT_OFFSET_SECONDS, NTP_SERVER_1,
+             NTP_SERVER_2);
+  ntpStarted = true;
+  Serial.println("[NTP] Da bat dau dong bo thoi gian UTC+7.");
+}
+
+bool isNtpTimeSynchronized() {
+  return time(nullptr) >= MINIMUM_VALID_NTP_TIME;
 }
