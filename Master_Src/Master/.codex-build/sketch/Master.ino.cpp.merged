@@ -1,14 +1,15 @@
+#line 1 "E:\\ALL PROJECTS\\PROJECT FOR CUSTOMER\\Thay_Luat\\Tower_Inclination_Monitoring_System\\Tower_inclination_monitoring_system\\Src\\Master_Src\\Master\\Master.ino"
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Wire.h>
 
-#include "src/OLED/Wifi_Lora_Connect_Effect.h"
+#include "src/Wifi_Lora_Connect_Effect.h"
 
 // ============================================================
 // WIFI CONFIG
 // ============================================================
-const char *ssid = "TINIHI";                 // TINIHI
-const char *password = "thanhnguyen201077"; // thanhnguyen201077
+const char *ssid = "TINIHI";                 // TINIHI / ESP32_Transmit
+const char *password = "thanhnguyen201077"; // thanhnguyen201077 / 12345678
 
 // ============================================================
 // OLED SH1106 1.3 INCH CONFIG (128x64, I2C)
@@ -138,12 +139,11 @@ void loop() {
           now - disconnectedSince >= INTERVAL_RESTART_ESP32) {
         Serial.println(">> [TIMEOUT 50s] KHOI DONG LAI ESP32...");
         connectEffect.RestartESP32(ConnectionType::WIFI);
-        if (connectEffect.isReady()) {
-          delay(700); // Cho phep nguoi dung nhin thay hieu ung cuoi.
-        }
+        delay(700); // Cho phep nguoi dung nhin thay hieu ung cuoi.
         ESP.restart();
       }
       break;
     }
   }
 }
+
