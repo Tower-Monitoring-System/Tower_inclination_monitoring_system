@@ -7,12 +7,6 @@ function setNestedValue(target, path, value) {
   }
 }
 
-function statusLabel(value) {
-  return String(value || "unavailable")
-    .replace(/-/g, " ")
-    .replace(/^./, (character) => character.toUpperCase());
-}
-
 function formatTilt(value) {
   return Number.isFinite(Number(value)) ? Number(value).toFixed(2) : "—";
 }
@@ -84,15 +78,6 @@ export class SettingsPage {
       resetButton: byId("settingsReset"),
       currentValues: byId("settingsCurrentValues"),
       batteryRange: byId("settingsBatteryRange"),
-      ipMode: byId("settingsIpMode"),
-      staticFields: byId("settingsStaticFields"),
-      autoReconnect: byId("settingsAutoReconnect"),
-      apStatus: byId("settingsApStatus"),
-      apSsid: byId("settingsApSsid"),
-      apPassword: byId("settingsApPassword"),
-      wifiStatus: byId("settingsWifiStatus"),
-      connectApButton: byId("settingsConnectAp"),
-      testButton: byId("settingsTestConnection"),
       cancelButton: byId("settingsCancel"),
       applyButton: byId("settingsApply"),
       resetConfirm: byId("settingsResetConfirm"),
@@ -141,9 +126,6 @@ export class SettingsPage {
       const eventName = input.type === "checkbox" || input.tagName === "SELECT" ? "change" : "input";
       this.listen(input, eventName, () => this.handleSettingInput(input));
     });
-    this.document.querySelectorAll("[data-password-toggle]").forEach((button) => {
-      this.listen(button, "click", () => this.togglePassword(button));
-    });
     this.listen(this.elements.readButton, "click", () => this.readCurrentValues());
     this.listen(this.elements.calibrateButton, "click", () => this.calibrate());
     this.listen(this.elements.resetButton, "click", () => this.openResetConfirmation());
@@ -156,8 +138,6 @@ export class SettingsPage {
     });
     this.listen(this.elements.cancelButton, "click", () => this.cancelChanges());
     this.listen(this.elements.applyButton, "click", () => this.applyChanges());
-    this.listen(this.elements.testButton, "click", () => this.testConnection());
-    this.listen(this.elements.connectApButton, "click", () => this.connectAccessPoint());
     [this.elements.towerId, this.elements.towerName, this.elements.towerLocation].forEach((input) => {
       this.listen(input, "input", () => this.handleTowerInput(input));
       this.listen(input, "keydown", (event) => {
@@ -357,7 +337,6 @@ export class SettingsPage {
     this.validation = this.service.validate(this.draft);
     this.syncLinkedControls(path, input);
     this.renderValidation();
-    this.renderNetworkState();
     this.renderActionState();
   }
 
@@ -452,17 +431,6 @@ export class SettingsPage {
         input.value = sourceInput.value;
       }
     });
-  }
-
-  togglePassword(button) {
-    const input = this.document.getElementById(button.dataset.passwordToggle);
-    if (!input) {
-      return;
-    }
-    const reveal = input.type === "password";
-    input.type = reveal ? "text" : "password";
-    button.setAttribute("aria-pressed", reveal ? "true" : "false");
-    button.setAttribute("aria-label", reveal ? "Hide password" : "Show password");
   }
 
   async runAction(action, callback) {
@@ -568,43 +536,6 @@ export class SettingsPage {
     });
   }
 
-  async testConnection() {
-    this.validation = this.service.validate(this.draft);
-    this.renderValidation();
-    const wifiError = Object.keys(this.validation.errors).some((path) => path.startsWith("wifi."));
-    if (wifiError) {
-      this.focusFirstError("wifi.");
-      this.onToast("Review the Wi-Fi settings before testing the connection.", "error");
-      return;
-    }
-
-    await this.runAction("test", async () => {
-      try {
-        const result = await this.service.testConnection(this.draft.wifi);
-        this.draft.wifi.connectionStatus = result.connected ? "connected" : "disconnected";
-        this.renderNetworkState();
-        this.onToast(result.message, result.connected ? "info" : "error");
-      } catch (error) {
-        this.window.console.error("Wi-Fi connection test failed.", error);
-        this.onToast("Wi-Fi connection test failed.", "error");
-      }
-    });
-  }
-
-  async connectAccessPoint() {
-    await this.runAction("connect-ap", async () => {
-      try {
-        const result = await this.service.connectAccessPoint();
-        this.draft.accessPoint.connectionStatus = result.connected ? "connected" : "disconnected";
-        this.renderNetworkState();
-        this.onToast(result.message, result.connected ? "info" : "error");
-      } catch (error) {
-        this.window.console.error("ESP32 access point connection failed.", error);
-        this.onToast("ESP32 access point connection failed.", "error");
-      }
-    });
-  }
-
   focusFirstError(prefix = "") {
     const firstPath = Object.keys(this.validation.errors).find((path) => path.startsWith(prefix));
     this.document.querySelector(`[data-setting-path='${firstPath}']`)?.focus();
@@ -628,7 +559,6 @@ export class SettingsPage {
     });
     this.renderCurrentValues();
     this.renderValidation();
-    this.renderNetworkState();
     this.renderActionState();
     this.renderTowerManagement();
   }
@@ -654,23 +584,6 @@ export class SettingsPage {
     });
   }
 
-  renderNetworkState() {
-    const staticMode = this.draft.wifi.ipMode === "static";
-    this.elements.staticFields.classList.toggle("is-disabled", !staticMode);
-    this.elements.staticFields.querySelectorAll("input").forEach((input) => {
-      input.disabled = Boolean(this.busyAction) || !staticMode;
-    });
-    this.elements.apStatus.textContent = statusLabel(this.draft.accessPoint.status);
-    this.elements.apStatus.dataset.status = this.draft.accessPoint.status;
-    this.elements.apSsid.value = this.draft.accessPoint.ssid || "Unavailable";
-    this.elements.apPassword.value = this.draft.accessPoint.password || "";
-    this.elements.wifiStatus.textContent = statusLabel(this.draft.wifi.connectionStatus);
-    this.elements.wifiStatus.dataset.status = this.draft.wifi.connectionStatus;
-    this.elements.connectApButton.textContent = this.draft.accessPoint.connectionStatus === "connected"
-      ? "AP connected"
-      : "Connect AP";
-  }
-
   renderActionState() {
     const busy = Boolean(this.busyAction);
     this.elements.page?.classList.toggle("is-busy", busy);
@@ -679,10 +592,8 @@ export class SettingsPage {
       if (control.closest(".settings-confirm-dialog") || control.closest("[data-tower-management]")) {
         return;
       }
-      const staticField = control.closest("#settingsStaticFields");
-      control.disabled = busy || Boolean(staticField && this.draft.wifi.ipMode !== "static");
+      control.disabled = busy;
     });
-    this.renderNetworkState();
     this.elements.cancelButton.disabled = busy || !this.isDirty();
     this.elements.applyButton.disabled = busy || !this.isDirty() || !this.validation.valid;
     const applyLabel = this.elements.applyButton.querySelector("span");

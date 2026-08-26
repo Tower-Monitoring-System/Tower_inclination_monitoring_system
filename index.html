@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="./css/list.css?v=20260824.6" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.3" />
   <link rel="stylesheet" href="./css/towers.css?v=20260825.1" />
-  <link rel="stylesheet" href="./css/settings.css?v=20260824.4" />
+  <link rel="stylesheet" href="./css/settings.css?v=20260827.1" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
   <a class="skip-link" href="#dashboardContent">Skip to dashboard content</a>
@@ -587,12 +587,12 @@
           <form class="settings-layout" id="systemSettingsForm" novalidate>
             <div class="settings-left-column">
               <article class="settings-card settings-calibration-card">
-              <header class="settings-card-header">
-                <div>
-                  <h2>MPU6050 Calibration</h2>
-                </div>
-                <span class="settings-card-icon" aria-hidden="true"><svg><use href="#icon-settings"></use></svg></span>
-              </header>
+                <header class="settings-card-header">
+                  <div>
+                    <h2>MPU6050 Calibration</h2>
+                  </div>
+                  <span class="settings-card-icon" aria-hidden="true"><svg><use href="#icon-settings"></use></svg></span>
+                </header>
 
               <section class="settings-section" aria-labelledby="settingsInitialReferenceTitle">
                 <div class="settings-section-heading">
@@ -642,6 +642,10 @@
                 </div>
               </section>
 
+              <p class="settings-current-values" id="settingsCurrentValues">
+                Read the live sensor before applying a new calibration reference.
+              </p>
+
               <div class="settings-calibration-actions">
                 <button class="secondary-button" id="settingsReadValues" type="button">
                   <svg aria-hidden="true"><use href="#icon-refresh"></use></svg><span>Read current values</span>
@@ -652,11 +656,30 @@
                 </button>
               </div>
               </article>
+            </div>
+
+            <div class="settings-right-column">
+              <article class="settings-card settings-battery-card">
+                <header class="settings-card-header">
+                  <div><h2>Battery Settings</h2><p>Configure minimum battery voltage thresholds</p></div>
+                  <span class="settings-card-icon battery" aria-hidden="true"><svg><use href="#icon-battery"></use></svg></span>
+                </header>
+                <label class="settings-field" for="settingsBatteryNumber"><span>Minimum Voltage Threshold (V)</span></label>
+                <div class="settings-battery-control">
+                  <input id="settingsBatteryNumber" type="number" data-setting-path="battery.minimumVoltage" />
+                  <div class="settings-range-wrap">
+                    <input id="settingsBatteryRange" type="range" data-setting-path="battery.minimumVoltage" aria-label="Minimum battery voltage threshold" />
+                    <div><span>3.3 V</span><span>8.4 V</span></div>
+                  </div>
+                </div>
+                <small class="settings-inline-error" data-settings-error="battery.minimumVoltage" hidden></small>
+              </article>
 
               <article class="settings-card tower-management-card" data-tower-management aria-labelledby="towerManagementTitle">
                 <header class="settings-card-header tower-management-header">
                   <div>
                     <h2 id="towerManagementTitle">Tower Management</h2>
+                    <p>Add and manage the towers shown across the monitoring dashboard</p>
                   </div>
                   <span class="settings-card-icon" aria-hidden="true"><svg><use href="#icon-tower"></use></svg></span>
                 </header>
@@ -701,105 +724,6 @@
               </article>
             </div>
 
-            <div class="settings-right-column">
-              <article class="settings-card settings-battery-card">
-                <header class="settings-card-header">
-                  <div><h2>Battery Settings</h2><p>Configure minimum battery voltage thresholds</p></div>
-                  <span class="settings-card-icon battery" aria-hidden="true"><svg><use href="#icon-battery"></use></svg></span>
-                </header>
-                <label class="settings-field" for="settingsBatteryNumber"><span>Minimum Voltage Threshold (V)</span></label>
-                <div class="settings-battery-control">
-                  <input id="settingsBatteryNumber" type="number" data-setting-path="battery.minimumVoltage" />
-                  <div class="settings-range-wrap">
-                    <input id="settingsBatteryRange" type="range" data-setting-path="battery.minimumVoltage" aria-label="Minimum battery voltage threshold" />
-                    <div><span>3.3 V</span><span>8.4 V</span></div>
-                  </div>
-                </div>
-                <small class="settings-inline-error" data-settings-error="battery.minimumVoltage" hidden></small>
-              </article>
-
-              <article class="settings-card settings-wifi-card">
-                <header class="settings-card-header">
-                  <div><h2>ESP32 Wi-Fi Settings</h2><p>Configure Internet Wi-Fi and the ESP32 local access point</p></div>
-                  <span class="settings-card-icon wifi" aria-hidden="true"><svg><use href="#icon-signal"></use></svg></span>
-                </header>
-
-                <div class="settings-network-grid">
-                  <div class="settings-network-column">
-                    <label class="settings-field">
-                      <span>Wi-Fi SSID</span>
-                      <input type="text" autocomplete="off" maxlength="32" data-setting-path="wifi.ssid" />
-                      <small data-settings-error="wifi.ssid" hidden></small>
-                    </label>
-                    <label class="settings-field">
-                      <span>Password</span>
-                      <span class="settings-password-control">
-                        <input id="settingsWifiPassword" type="password" autocomplete="new-password" data-setting-path="wifi.password" />
-                        <button type="button" data-password-toggle="settingsWifiPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-eye"></use></svg></button>
-                      </span>
-                      <small data-settings-error="wifi.password" hidden></small>
-                    </label>
-                    <label class="settings-field">
-                      <span>IP Mode</span>
-                      <select id="settingsIpMode" data-setting-path="wifi.ipMode">
-                        <option value="dhcp">DHCP (Auto)</option>
-                        <option value="static">Static IP</option>
-                      </select>
-                      <small data-settings-error="wifi.ipMode" hidden></small>
-                    </label>
-                    <label class="settings-switch-row" for="settingsAutoReconnect">
-                      <span><strong>Auto reconnect</strong></span>
-                      <input id="settingsAutoReconnect" type="checkbox" data-setting-path="wifi.autoReconnect" />
-                      <i aria-hidden="true"></i>
-                    </label>
-                  </div>
-
-                  <div class="settings-network-column settings-static-fields" id="settingsStaticFields">
-                    <label class="settings-field">
-                      <span>Static IP</span>
-                      <input type="text" inputmode="numeric" data-setting-path="wifi.staticIp" />
-                      <small data-settings-error="wifi.staticIp" hidden></small>
-                    </label>
-                    <label class="settings-field">
-                      <span>Gateway</span>
-                      <input type="text" inputmode="numeric" data-setting-path="wifi.gateway" />
-                      <small data-settings-error="wifi.gateway" hidden></small>
-                    </label>
-                    <label class="settings-field">
-                      <span>Subnet Mask</span>
-                      <input type="text" inputmode="numeric" data-setting-path="wifi.subnetMask" />
-                      <small data-settings-error="wifi.subnetMask" hidden></small>
-                    </label>
-                    <div class="settings-connection-summary">
-                      <span>Internet status</span><strong id="settingsWifiStatus" data-status="disconnected">Disconnected</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <section class="settings-ap-section" aria-labelledby="settingsApTitle">
-                  <div class="settings-section-heading">
-                    <h3 id="settingsApTitle">AP Mode (ESP32 Local Wi-Fi)</h3>
-                    <p>Local network configuration for ESP32</p>
-                  </div>
-                  <div class="settings-ap-grid">
-                    <div class="settings-ap-status"><span>AP Status</span><strong id="settingsApStatus" data-status="unavailable">Unavailable</strong></div>
-                    <label class="settings-field"><span>AP SSID</span><input id="settingsApSsid" type="text" readonly /></label>
-                    <label class="settings-field">
-                      <span>AP Password</span>
-                      <span class="settings-password-control">
-                        <input id="settingsApPassword" type="password" readonly />
-                        <button type="button" data-password-toggle="settingsApPassword" aria-label="Show password" aria-pressed="false"><svg aria-hidden="true"><use href="#icon-eye"></use></svg></button>
-                      </span>
-                    </label>
-                    <button class="secondary-button" id="settingsConnectAp" type="button">Connect AP</button>
-                  </div>
-                  <button class="settings-test-button" id="settingsTestConnection" type="button">
-                    <svg aria-hidden="true"><use href="#icon-signal"></use></svg><span>Test connection</span>
-                  </button>
-                </section>
-              </article>
-            </div>
-
             <footer class="settings-footer">
               <p> </p>
               <div>
@@ -837,6 +761,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260825.1"></script>
+  <script type="module" src="./js/app.js?v=20260827.1"></script>
 </body>
 </html>

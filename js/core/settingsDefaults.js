@@ -2,7 +2,6 @@ export const SETTINGS_LIMITS = Object.freeze({
   calibration: Object.freeze({ minimum: -180, maximum: 180 }),
   tiltThreshold: Object.freeze({ minimum: 0.1, maximum: 90 }),
   battery: Object.freeze({ minimum: 3.3, maximum: 8.4, step: 0.1 }),
-  wifi: Object.freeze({ ssidMaximumLength: 32, passwordMinimumLength: 8, passwordMaximumLength: 63 }),
   alertCriticalMultiplier: 1.5
 });
 

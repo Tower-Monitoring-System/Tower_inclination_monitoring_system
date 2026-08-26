@@ -117,7 +117,7 @@ Applied battery and per-axis inclination thresholds come from the shared System 
 
 ## System Settings
 
-The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, the battery warning threshold, ESP32 Wi-Fi/AP settings, and the shared Tower Registry. Tower records are validated and persisted through a repository/service boundary; Tower ID is the exact Google Sheet tab name. Wi-Fi and AP passwords are never written to browser storage.
+The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, the battery warning threshold, and the shared Tower Registry. Tower records are validated and persisted through a repository/service boundary; Tower ID is the exact Google Sheet tab name.
 
 ## Tower Monitoring
 
