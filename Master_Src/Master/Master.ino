@@ -1,27 +1,47 @@
+#include <Arduino.h>
 #include <WiFi.h>
-const char *ssid = "TINIHI"; // TINIHI&&ESP32_Transmit
-const char *password = "thanhnguyen201077";   // thanhnguyen201077&&12345678
+#include <Wire.h>
 
-// --- KHAI BAO BIEN THOI GIAN ---
-unsigned long previousMillis_Disconnect = 0; 
-unsigned long previousMillis_Restart = 0; 
-const uint16_t interval_disconnect = 20000;
-const uint16_t interval_restartEsp32 = 50000;
+#include "src/Wifi_Lora_Connect_Effect.h"
 
-enum WifiState {
-  WS_DISCONNECTED, 
-  WS_CONNECTING,   
-  WS_CONNECTED   
+// ============================================================
+// WIFI CONFIG
+// ============================================================
+const char *ssid = "TINIHI";                 // TINIHI
+const char *password = "anhnguyen201077"; // thanhnguyen201077
+
+// ============================================================
+// OLED SH1106 1.3 INCH CONFIG (128x64, I2C)
+// ============================================================
+const int8_t OLED_SDA = 18;
+const int8_t OLED_SCL = 19;
+const int8_t OLED_RESET = -1;
+const uint8_t OLED_ADDRESS = 0x3C;
+
+Wifi_Lora_Connect_Effect connectEffect(Wire, OLED_RESET);
+
+// ============================================================
+// WIFI TIMEOUT CONFIG
+// ============================================================
+const uint32_t INTERVAL_DISCONNECT = 20000UL;
+const uint32_t INTERVAL_RESTART_ESP32 = 50000UL;
+
+volatile uint32_t previousMillisDisconnect = 0;
+volatile uint32_t disconnectedSince = 0;
+volatile bool outageActive = false;
+
+enum WifiState : uint8_t {
+  WS_DISCONNECTED,
+  WS_CONNECTING,
+  WS_CONNECTED
 };
-volatile WifiState currentWifiState = WS_DISCONNECTED;
 
-// --- Prototype ---
-void ConnectingEffect();
-void LostConnectEffect();
-void Disconnect();
-void RestartESP32();
+volatile WifiState currentWifiState = WS_CONNECTING;
 
-// --- HAM XU LY SU KIEN WIFI (CALLBACK) ---
+// ============================================================
+// WIFI EVENT CALLBACK
+// Chi cap nhat trang thai tai callback; OLED duoc ve trong loop().
+// ============================================================
 void WiFiEvent(WiFiEvent_t event) {
   switch (event) {
     case ARDUINO_EVENT_WIFI_STA_START:
@@ -32,7 +52,7 @@ void WiFiEvent(WiFiEvent_t event) {
       break;
 
     case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      Serial.println("[CONNECTING] Da ket noi den Access Point. Dang cho IP...");
+      Serial.println("[CONNECTING] Da ket noi Access Point. Dang cho IP...");
       currentWifiState = WS_CONNECTING;
       break;
 
@@ -45,23 +65,48 @@ void WiFiEvent(WiFiEvent_t event) {
       Serial.print("[CONFIRM] Cuong do tin hieu (RSSI): ");
       Serial.print(WiFi.RSSI());
       Serial.println(" dBm");
+
+      outageActive = false;
       currentWifiState = WS_CONNECTED;
       break;
 
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED: {
+      const uint32_t now = millis();
       Serial.println("[FAIL] MAT KET NOI! Dang thu ket noi lai...");
-      if (currentWifiState != WS_DISCONNECTED) {
+
+      // Giu moc bat dau mat ket noi qua cac lan retry de timeout 50 giay
+      // khong bi tinh lai tu dau.
+      if (!outageActive) {
         Serial.println("[FAIL] Bat dau dem gio restart...");
-        previousMillis_Disconnect = millis();
-        previousMillis_Restart = millis();
-        currentWifiState = WS_DISCONNECTED;
+        disconnectedSince = now;
+        previousMillisDisconnect = now;
+        outageActive = true;
       }
+
+      currentWifiState = WS_DISCONNECTED;
+      break;
+    }
+
+    default:
       break;
   }
 }
 
 void setup() {
   Serial.begin(115200);
+  delay(200);
+
+  if (!connectEffect.begin(OLED_SDA, OLED_SCL, OLED_ADDRESS)) {
+    Serial.println("[OLED] Khong tim thay OLED SH1106 tai dia chi 0x3C.");
+    Serial.println("[OLED] WiFi van tiep tuc hoat dong khong co man hinh.");
+  } else {
+    Serial.println("[OLED] Khoi tao OLED SH1106 thanh cong.");
+  }
+
+  // Master hien tai chi su dung WiFi. API ConnectionType::LORA da co san
+  // trong Wifi_Lora_Connect_Effect de tich hop AS32-TTL-100 sau nay.
+  connectEffect.ConnectingEffect(ConnectionType::WIFI);
+
   WiFi.onEvent(WiFiEvent);
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
@@ -70,45 +115,35 @@ void setup() {
 void loop() {
   switch (currentWifiState) {
     case WS_CONNECTING:
-      ConnectingEffect();
+      connectEffect.ConnectingEffect(ConnectionType::WIFI);
       break;
 
-    case WS_CONNECTED: {
+    case WS_CONNECTED:
+      connectEffect.ConnectedEffect(ConnectionType::WIFI, WiFi.RSSI());
+      break;
+
+    case WS_DISCONNECTED: {
+      const uint32_t now = millis();
+      connectEffect.LostConnectEffect(ConnectionType::WIFI);
+
+      if (now - previousMillisDisconnect >= INTERVAL_DISCONNECT) {
+        Serial.println(">> [TIMEOUT 20s] Reset WiFi va ket noi lai...");
+        connectEffect.Disconnect(ConnectionType::WIFI);
+        WiFi.disconnect();
+        WiFi.begin(ssid, password);
+        previousMillisDisconnect = now;
+      }
+
+      if (outageActive &&
+          now - disconnectedSince >= INTERVAL_RESTART_ESP32) {
+        Serial.println(">> [TIMEOUT 50s] KHOI DONG LAI ESP32...");
+        connectEffect.RestartESP32(ConnectionType::WIFI);
+        if (connectEffect.isReady()) {
+          delay(700); // Cho phep nguoi dung nhin thay hieu ung cuoi.
+        }
+        ESP.restart();
+      }
       break;
     }
-
-    case WS_DISCONNECTED:
-      LostConnectEffect();
-      Disconnect();
-      RestartESP32();
-      break;
   }
-}
-
-void Disconnect() {
-  unsigned long currentMillis = millis();
-  if(currentMillis - previousMillis_Disconnect >= interval_disconnect) {
-    Serial.println(">> [TIMEOUT 20s] Thu Reset WiFi va Ket noi lai...");
-    WiFi.disconnect();
-    WiFi.begin(ssid, password);
-    previousMillis_Disconnect = currentMillis;
-  }
-}
-
-void RestartESP32() {
-  unsigned long currentMillis = millis();
-  if(currentMillis - previousMillis_Restart >= interval_restartEsp32) {
-    Serial.println(">> [TIMEOUT 50s] KHONG THE KET NOI. KHOI DONG LAI ESP32...");
-    ESP.restart();
-  }
-}
-
-// --- HIEU UNG LED "LOADING" ---
-void ConnectingEffect() {
-
-}
-
-// --- HIEU UNG MAT KET NOI ---
-void LostConnectEffect() {
-
 }
