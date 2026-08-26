@@ -1,6 +1,7 @@
 #include "Wifi_Lora_Connect_Effect.h"
 
 #include <stdio.h>
+#include <time.h>
 
 Wifi_Lora_Connect_Effect::Wifi_Lora_Connect_Effect(TwoWire &wire,
                                                    int8_t resetPin)
@@ -80,6 +81,34 @@ void Wifi_Lora_Connect_Effect::ConnectedEffect(ConnectionType type,
   }
 
   _display.display();
+}
+
+void Wifi_Lora_Connect_Effect::MasterDashboard(
+    const MasterDashboardState &state) {
+  if (!_ready) {
+    return;
+  }
+
+  const bool changed = selectScreen(Screen::DASHBOARD, ConnectionType::WIFI);
+  const bool animationActive =
+      state.loraState == LoraDisplayState::CONNECTING ||
+      state.sheetState == SheetDisplayState::SYNCING ||
+      state.sheetState == SheetDisplayState::SENDING;
+  const uint16_t frameInterval = animationActive ? 250 : 1000;
+  if (!frameDue(millis(), frameInterval, changed)) {
+    return;
+  }
+
+  _display.clearDisplay();
+  drawDashboardHeader(state);
+  drawGatewayIcon(_frame, state.loraState, state.loraRssi);
+  _display.drawFastVLine(34, 12, 41, SH110X_WHITE);
+  drawDashboardRows(state, _frame);
+  _display.drawFastHLine(0, 53, SCREEN_WIDTH, SH110X_WHITE);
+  drawDashboardFooter(state.timeSynchronized, _frame);
+  _display.display();
+
+  _frame = (_frame + 1) % 4;
 }
 
 void Wifi_Lora_Connect_Effect::LostConnectEffect(ConnectionType type) {
@@ -280,4 +309,178 @@ void Wifi_Lora_Connect_Effect::drawRestartIcon(int16_t centerX,
   _display.fillTriangle(centerX + 8, centerY - 11, centerX + 15,
                         centerY - 10, centerX + 12, centerY - 4,
                         SH110X_WHITE);
+}
+
+void Wifi_Lora_Connect_Effect::drawDashboardHeader(
+    const MasterDashboardState &state) {
+  _display.setTextSize(1);
+  _display.setCursor(1, 1);
+  _display.print("MASTER");
+  _display.setCursor(42, 1);
+  _display.print("GW");
+
+  _display.setCursor(73, 1);
+  switch (state.loraState) {
+    case LoraDisplayState::CONNECTED:
+      _display.print("L+");
+      break;
+    case LoraDisplayState::CONNECTING:
+      _display.print("L~");
+      break;
+    case LoraDisplayState::LOST:
+      _display.print("L!");
+      break;
+    case LoraDisplayState::STANDBY:
+    default:
+      _display.print("L-");
+      break;
+  }
+
+  _display.setCursor(98, 1);
+  _display.print("W");
+  drawSignalBars(126, 9, signalLevel(state.wifiRssi));
+  _display.drawFastHLine(0, 10, SCREEN_WIDTH, SH110X_WHITE);
+}
+
+void Wifi_Lora_Connect_Effect::drawGatewayIcon(
+    uint8_t frame, LoraDisplayState loraState, int16_t loraRssi) {
+  const int16_t centerX = 17;
+  const int16_t antennaY = 27;
+
+  uint8_t waveLevel = 1;
+  if (loraState == LoraDisplayState::CONNECTING) {
+    waveLevel = 1 + (frame % 3);
+  } else if (loraState == LoraDisplayState::CONNECTED) {
+    waveLevel = signalLevel(loraRssi);
+  } else if (loraState == LoraDisplayState::STANDBY) {
+    waveLevel = 1 + (frame % 2);
+  } else {
+    waveLevel = 0;
+  }
+
+  const uint8_t radii[] = {5, 9, 13};
+  for (uint8_t index = 0; index < waveLevel && index < 3; ++index) {
+    _display.drawCircleHelper(centerX, antennaY, radii[index], 0x03,
+                              SH110X_WHITE);
+  }
+
+  _display.fillCircle(centerX, antennaY, 1, SH110X_WHITE);
+  _display.drawLine(centerX, antennaY + 2, 9, 49, SH110X_WHITE);
+  _display.drawLine(centerX, antennaY + 2, 25, 49, SH110X_WHITE);
+  _display.drawLine(13, 39, 21, 39, SH110X_WHITE);
+  _display.drawLine(11, 44, 23, 44, SH110X_WHITE);
+  _display.drawLine(13, 38, 22, 44, SH110X_WHITE);
+  _display.drawLine(21, 38, 12, 44, SH110X_WHITE);
+  _display.drawFastHLine(7, 50, 21, SH110X_WHITE);
+  _display.drawFastHLine(10, 52, 15, SH110X_WHITE);
+
+  if (loraState == LoraDisplayState::LOST && (frame % 2) == 0) {
+    _display.drawLine(11, 20, 23, 32, SH110X_WHITE);
+    _display.drawLine(23, 20, 11, 32, SH110X_WHITE);
+  }
+}
+
+void Wifi_Lora_Connect_Effect::drawSignalBars(int16_t rightX,
+                                              int16_t baselineY,
+                                              uint8_t level) {
+  if (level > 4) {
+    level = 4;
+  }
+
+  const int16_t firstX = rightX - 15;
+  for (uint8_t index = 0; index < 4; ++index) {
+    const int16_t height = static_cast<int16_t>((index + 1) * 2);
+    const int16_t x = firstX + static_cast<int16_t>(index * 4);
+    const int16_t y = baselineY - height + 1;
+    if (index < level) {
+      _display.fillRect(x, y, 3, height, SH110X_WHITE);
+    } else {
+      _display.drawRect(x, y, 3, height, SH110X_WHITE);
+    }
+  }
+}
+
+void Wifi_Lora_Connect_Effect::drawDashboardRows(
+    const MasterDashboardState &state, uint8_t frame) {
+  char line[20];
+  _display.setTextSize(1);
+
+  snprintf(line, sizeof(line), "WIFI %ddBm", state.wifiRssi);
+  _display.setCursor(39, 13);
+  _display.print(line);
+
+  switch (state.loraState) {
+    case LoraDisplayState::CONNECTING: {
+      const char spinner[] = {'|', '/', '-', '\\'};
+      snprintf(line, sizeof(line), "LORA SEARCH %c", spinner[frame % 4]);
+      break;
+    }
+    case LoraDisplayState::CONNECTED:
+      if (state.loraRssi != 0) {
+        snprintf(line, sizeof(line), "LORA %ddBm", state.loraRssi);
+      } else {
+        snprintf(line, sizeof(line), "LORA LINK");
+      }
+      break;
+    case LoraDisplayState::LOST:
+      snprintf(line, sizeof(line), "LORA LOST");
+      break;
+    case LoraDisplayState::STANDBY:
+    default:
+      snprintf(line, sizeof(line), "LORA STANDBY");
+      break;
+  }
+  _display.setCursor(39, 23);
+  _display.print(line);
+
+  const char spinner[] = {'|', '/', '-', '\\'};
+  switch (state.sheetState) {
+    case SheetDisplayState::SYNCING:
+      snprintf(line, sizeof(line), "SHEET SYNC %c", spinner[frame % 4]);
+      break;
+    case SheetDisplayState::SENDING:
+      snprintf(line, sizeof(line), "SHEET SEND %c", spinner[frame % 4]);
+      break;
+    case SheetDisplayState::SUCCESS:
+      snprintf(line, sizeof(line), "SHEET OK");
+      break;
+    case SheetDisplayState::ERROR:
+      snprintf(line, sizeof(line), "SHEET ERROR");
+      break;
+    case SheetDisplayState::READY:
+    default:
+      snprintf(line, sizeof(line), "SHEET READY");
+      break;
+  }
+  _display.setCursor(39, 33);
+  _display.print(line);
+
+  if (state.loraState == LoraDisplayState::STANDBY) {
+    snprintf(line, sizeof(line), "NODES -- Q:%u",
+             static_cast<unsigned>(state.pendingUploads));
+  } else {
+    snprintf(line, sizeof(line), "NODES %02u Q:%u",
+             static_cast<unsigned>(state.nodeCount),
+             static_cast<unsigned>(state.pendingUploads));
+  }
+  _display.setCursor(39, 43);
+  _display.print(line);
+}
+
+void Wifi_Lora_Connect_Effect::drawDashboardFooter(bool timeSynchronized,
+                                                   uint8_t frame) {
+  char text[24];
+  if (timeSynchronized) {
+    const time_t now = time(nullptr);
+    struct tm localTime = {};
+    if (localtime_r(&now, &localTime)) {
+      strftime(text, sizeof(text), "%d/%m %H:%M:%S", &localTime);
+    } else {
+      snprintf(text, sizeof(text), "TIME ERROR");
+    }
+  } else {
+    const char spinner[] = {'|', '/', '-', '\\'};
+    snprintf(text, sizeof(text), "TIME SYNC %c", spinner[frame % 4]);
+  }
+  drawCenteredText(text, 56);
 }

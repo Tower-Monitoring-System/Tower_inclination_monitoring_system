@@ -11,6 +11,31 @@ enum class ConnectionType : uint8_t {
   LORA
 };
 
+enum class LoraDisplayState : uint8_t {
+  STANDBY,
+  CONNECTING,
+  CONNECTED,
+  LOST
+};
+
+enum class SheetDisplayState : uint8_t {
+  SYNCING,
+  READY,
+  SENDING,
+  SUCCESS,
+  ERROR
+};
+
+struct MasterDashboardState {
+  int16_t wifiRssi;
+  LoraDisplayState loraState;
+  int16_t loraRssi;
+  uint8_t nodeCount;
+  SheetDisplayState sheetState;
+  uint8_t pendingUploads;
+  bool timeSynchronized;
+};
+
 /**
  * Hieu ung trang thai ket noi cho OLED SH1106 1.3 inch (128x64).
  *
@@ -33,6 +58,10 @@ public:
   void Disconnect(ConnectionType type = ConnectionType::WIFI);
   void RestartESP32(ConnectionType type = ConnectionType::WIFI);
 
+  // Giao dien chinh cua Master. Cac truong LoRa/node da san sang de cap nhat
+  // khi module AS32-TTL-100 duoc tich hop sau nay.
+  void MasterDashboard(const MasterDashboardState &state);
+
   void clear();
 
 private:
@@ -40,6 +69,7 @@ private:
     NONE,
     CONNECTING,
     CONNECTED,
+    DASHBOARD,
     LOST,
     DISCONNECTING,
     RESTARTING
@@ -69,6 +99,12 @@ private:
   void drawLoraIcon(int16_t centerX, int16_t centerY, uint8_t level);
   void drawReconnectIcon(int16_t centerX, int16_t centerY);
   void drawRestartIcon(int16_t centerX, int16_t centerY);
+  void drawDashboardHeader(const MasterDashboardState &state);
+  void drawGatewayIcon(uint8_t frame, LoraDisplayState loraState,
+                       int16_t loraRssi);
+  void drawSignalBars(int16_t rightX, int16_t baselineY, uint8_t level);
+  void drawDashboardRows(const MasterDashboardState &state, uint8_t frame);
+  void drawDashboardFooter(bool timeSynchronized, uint8_t frame);
 };
 
 #endif
