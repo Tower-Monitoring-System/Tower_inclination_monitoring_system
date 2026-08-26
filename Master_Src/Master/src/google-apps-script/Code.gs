@@ -1,43 +1,20 @@
 var REQUIRED_HEADERS = Object.freeze(["Date", "Time", "X", "Y", "Z", "Battery"]);
 var MAXIMUM_ROWS = 20000;
-var SENSOR_API_VERSION = "2026-08-26.2";
-
-// Mo URL Web App /exec tren trinh duyet de xac nhan dung deployment moi.
-// Ham nay khong tra ve token, Spreadsheet ID hay du lieu cam bien.
-function doGet() {
-  var properties = PropertiesService.getScriptProperties();
-  return jsonResponse_({
-    ok: true,
-    service: "Tower inclination sensor API",
-    configured: Boolean(
-      properties.getProperty("SENSOR_DATA_SHARED_SECRET") &&
-      properties.getProperty("SENSOR_SHEET_ID")
-    )
-  });
-}
 
 function doPost(event) {
   try {
     var properties = PropertiesService.getScriptProperties();
     var expectedToken = properties.getProperty("SENSOR_DATA_SHARED_SECRET");
-    var sheetId = normalizeSpreadsheetId_(properties.getProperty("SENSOR_SHEET_ID"));
+    var sheetId = properties.getProperty("SENSOR_SHEET_ID");
     var fallbackSheetName = properties.getProperty("SENSOR_SHEET_NAME") || "";
 
     if (!expectedToken || !sheetId) {
-      return jsonResponse_({
-        ok: false,
-        errorCode: "SERVICE_NOT_CONFIGURED",
-        error: "Service is not configured. Check SENSOR_DATA_SHARED_SECRET and SENSOR_SHEET_ID."
-      });
+      return jsonResponse_({ ok: false, error: "Service is not configured." });
     }
 
     var request = parseRequest_(event);
     if (!request || !safeEqual_(request.token, expectedToken)) {
-      return jsonResponse_({
-        ok: false,
-        errorCode: "UNAUTHORIZED",
-        error: "Unauthorized request. SENSOR_DATA_SHARED_SECRET does not match."
-      });
+      return jsonResponse_({ ok: false, error: "Unauthorized request." });
     }
 
     var requestedTower = resolveRequestedTower_(request);
@@ -66,12 +43,6 @@ function doPost(event) {
     }
 
     var resolvedTowerId = requestedTower.provided ? requestedTower.value : sheet.getName();
-
-    // Giu nguyen API doc du lieu cu khi request khong co action="append".
-    // ESP32 Master dung action="append" de ghi mot mau cam bien moi.
-    if (request.action === "append") {
-      return appendSensorData_(request, properties, spreadsheet, sheet, resolvedTowerId);
-    }
 
     var lastRow = sheet.getLastRow();
     var lastColumn = sheet.getLastColumn();
@@ -119,126 +90,8 @@ function doPost(event) {
       }
     });
   } catch (error) {
-    console.error(error && error.stack ? error.stack : error);
-    return jsonResponse_({
-      ok: false,
-      errorCode: "TEMPORARY_UNAVAILABLE",
-      error: "Sensor data is temporarily unavailable."
-    });
+    return jsonResponse_({ ok: false, error: "Sensor data is temporarily unavailable." });
   }
-}
-
-function appendSensorData_(request, properties, spreadsheet, sheet, resolvedTowerId) {
-  var requestId = normalizeRequestId_(request.requestId);
-  var x = normalizeSensorNumber_(request.x, -180, 180);
-  var y = normalizeSensorNumber_(request.y, -180, 180);
-  var z = normalizeSensorNumber_(request.z, -180, 180);
-  var battery = normalizeSensorNumber_(request.battery, 0, 24);
-
-  if (!requestId || x === null || y === null || z === null || battery === null) {
-    return jsonResponse_({
-      ok: false,
-      errorCode: "INVALID_SENSOR_DATA",
-      error: "X/Y/Z must be -180..180, Battery must be 0..24, and requestId must be valid."
-    });
-  }
-
-  var lock = LockService.getScriptLock();
-  if (!lock.tryLock(5000)) {
-    return jsonResponse_({
-      ok: false,
-      errorCode: "LOCK_TIMEOUT",
-      error: "The sensor sheet is busy. Please retry."
-    });
-  }
-
-  try {
-    var idempotencyProperty = "SENSOR_LAST_REQUEST_ID_" + resolvedTowerId;
-    if (properties.getProperty(idempotencyProperty) === requestId) {
-      return jsonResponse_({
-        ok: true,
-        duplicate: true,
-        requestId: requestId,
-        towerId: resolvedTowerId
-      });
-    }
-
-    var lastRow = sheet.getLastRow();
-    var lastColumn = sheet.getLastColumn();
-    if (lastRow < 1 || lastColumn < 1) {
-      sheet.getRange(1, 1, 1, REQUIRED_HEADERS.length).setValues([REQUIRED_HEADERS]);
-      lastRow = 1;
-      lastColumn = REQUIRED_HEADERS.length;
-    }
-
-    var headers = sheet.getRange(1, 1, 1, lastColumn).getValues()[0];
-    var indexes = resolveHeaderIndexes_(headers);
-    if (!indexes) {
-      return jsonResponse_({
-        ok: false,
-        errorCode: "INVALID_SHEET_HEADERS",
-        error: "Required sensor columns are missing in Google Sheet " + resolvedTowerId + "."
-      });
-    }
-
-    var rowWidth = Math.max(lastColumn, REQUIRED_HEADERS.length);
-    var row = [];
-    for (var columnIndex = 0; columnIndex < rowWidth; columnIndex += 1) {
-      row.push("");
-    }
-
-    var writtenAt = new Date();
-    row[indexes.Date] = writtenAt;
-    row[indexes.Time] = writtenAt;
-    row[indexes.X] = x;
-    row[indexes.Y] = y;
-    row[indexes.Z] = z;
-    row[indexes.Battery] = battery;
-
-    var targetRow = sheet.getLastRow() + 1;
-    sheet.getRange(targetRow, 1, 1, rowWidth).setValues([row]);
-    sheet.getRange(targetRow, indexes.Date + 1).setNumberFormat("yyyy-MM-dd");
-    sheet.getRange(targetRow, indexes.Time + 1).setNumberFormat("HH:mm:ss");
-    SpreadsheetApp.flush();
-
-    // Chi luu ID sau khi du lieu da duoc ghi thanh cong. Neu ESP32 mat phan hoi
-    // va gui lai, request se khong tao them mot dong trung.
-    properties.setProperty(idempotencyProperty, requestId);
-
-    var timeZone = spreadsheet.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || "Asia/Ho_Chi_Minh";
-    return jsonResponse_({
-      ok: true,
-      duplicate: false,
-      requestId: requestId,
-      towerId: resolvedTowerId,
-      row: targetRow,
-      date: Utilities.formatDate(writtenAt, timeZone, "yyyy-MM-dd"),
-      time: Utilities.formatDate(writtenAt, timeZone, "HH:mm:ss")
-    });
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-function normalizeRequestId_(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  var requestId = value.trim();
-  return /^[A-Za-z0-9._:-]{1,64}$/.test(requestId) ? requestId : null;
-}
-
-function normalizeSpreadsheetId_(value) {
-  var text = String(value || "").trim();
-  var urlMatch = text.match(/\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
-  return urlMatch ? urlMatch[1] : text;
-}
-
-function normalizeSensorNumber_(value, minimum, maximum) {
-  if (typeof value !== "number" && typeof value !== "string") {
-    return null;
-  }
-  return normalizeNumber_(value, minimum, maximum);
 }
 
 function resolveRequestedTower_(request) {
@@ -385,7 +238,6 @@ function normalizeNumber_(value, minimum, maximum) {
 }
 
 function jsonResponse_(payload) {
-  payload.apiVersion = SENSOR_API_VERSION;
   return ContentService
     .createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);
