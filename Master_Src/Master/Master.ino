@@ -24,7 +24,7 @@ const char *password = "thanhnguyen201077";
 // Chi dien Deployment ID, khong dan ca URL /exec.
 // Shared secret phai trung voi Script Property SENSOR_DATA_SHARED_SECRET.
 // ============================================================
-const char *GOOGLE_SCRIPT_DEPLOYMENT_ID = "AKfycbzAeo79y8InJJDrK7MexB9MtD5HChtBBcc50e7NJ-ZyQRGTRgwBBFY4SGou9LFMbF3v";
+const char *GOOGLE_SCRIPT_DEPLOYMENT_ID = "AKfycbwrAbRWXss1oLYyvL5FaFSbFAb13U5BRfvYgPIUNiCPNspENL1kW7wYkKdt2sTOVJs";
 const char *GOOGLE_SCRIPT_SHARED_SECRET = "ph5CC7YKt8QIZelCsIcAg5TGovQtTtjR/QHboHMF1Os=";
 const char *DEFAULT_TOWER_ID = "TWR-01";
 
