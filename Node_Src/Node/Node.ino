@@ -1,83 +1,76 @@
-#include <math.h>
-
 #include "src/OLED/Lora_Connect_Effect.h"
+#include "src/Sensors/Tower_Sensors.h"
 
 // OLED SH1106G 1.3 inch dung I2C hardware mac dinh cua ESP32 WROOM:
 // SDA = GPIO21, SCL = GPIO22. Khong remap SDA/SCL sang GPIO khac.
 constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;
 
-constexpr uint32_t SENSOR_SAMPLE_INTERVAL_MS = 150UL;
-constexpr uint32_t DEMO_STATE_INTERVAL_MS = 3000UL;
+// MPU6050 dung controller I2C thu hai, tach hoan toan khoi bus OLED.
+constexpr int8_t MPU6050_SDA_PIN = 18;
+constexpr int8_t MPU6050_SCL_PIN = 19;
+constexpr uint8_t LM35_PIN = 4;
+constexpr uint32_t OLED_TELEMETRY_INTERVAL_MS = 67UL;  // Xap xi 15 FPS.
 
 Lora_Connect_Effect nodeDisplay;
+TwoWire mpuWire(1);
+TowerSensors towerSensors(mpuWire);
 
-const Lora_Connect_Effect::State DEMO_STATES[] = {
-    Lora_Connect_Effect::State::READY,
-    Lora_Connect_Effect::State::SENDING,
-    Lora_Connect_Effect::State::SUCCESS,
-    Lora_Connect_Effect::State::FAILED,
-    Lora_Connect_Effect::State::RETRY,
-    Lora_Connect_Effect::State::DISCONNECTED,
-};
-constexpr uint8_t DEMO_STATE_COUNT =
-    sizeof(DEMO_STATES) / sizeof(DEMO_STATES[0]);
+uint32_t lastOledTelemetryAt = 0;
 
-uint32_t lastSensorSampleAt = 0;
-uint8_t currentDemoState = 0;
-
-void updateDemoTelemetry(uint32_t now);
-void updateDemoLoraState(uint32_t now);
+void updateDisplayFromSensors(uint32_t now);
 
 void setup() {
   Serial.begin(115200);
 
   if (!nodeDisplay.begin(OLED_I2C_ADDRESS)) {
     Serial.println("[OLED] Khong tim thay SH1106G tai dia chi 0x3C.");
-    return;
+  } else {
+    Serial.println("[OLED] Node dashboard da san sang tren GPIO21/GPIO22.");
   }
 
-  nodeDisplay.setTelemetry("TWR-01", 0.64F, 0.00F, 0.00F, 4.20F, 32.0F);
-  nodeDisplay.setLoraState(Lora_Connect_Effect::State::READY);
+  nodeDisplay.setTowerId("TWR-01");
+
+  // Khong dung du lieu mo phong. Cac gia tri chua co du lieu that duoc hien
+  // thi bang placeholder cho den khi cam bien/phan cung tuong ung cap nhat.
+  nodeDisplay.setAngles(NAN, NAN, NAN);
+  nodeDisplay.setTemperature(NAN);
+  nodeDisplay.setBatteryVoltage(NAN);
   nodeDisplay.update();
-  Serial.println("[OLED] Node dashboard da san sang.");
+
+  if (!towerSensors.begin(MPU6050_SDA_PIN, MPU6050_SCL_PIN, LM35_PIN)) {
+    Serial.println("[SENSOR] OLED/LM35 van tiep tuc; MPU6050 se tu thu lai.");
+  }
 }
 
 void loop() {
   const uint32_t now = millis();
 
-  // Thay hai ham demo nay bang du lieu MPU6050, LM35/Battery va SX1278.
-  updateDemoTelemetry(now);
-  updateDemoLoraState(now);
+  towerSensors.update(now);
+  updateDisplayFromSensors(now);
   nodeDisplay.update();
 
   // yield() chi nhuong CPU cho ESP32, khong tao tre blocking nhu delay().
   yield();
 }
 
-void updateDemoTelemetry(uint32_t now) {
-  if (now - lastSensorSampleAt < SENSOR_SAMPLE_INTERVAL_MS) {
+void updateDisplayFromSensors(uint32_t now) {
+  if (now - lastOledTelemetryAt < OLED_TELEMETRY_INTERVAL_MS) {
     return;
   }
-  lastSensorSampleAt = now;
+  lastOledTelemetryAt = now;
 
-  const float phase = static_cast<float>(now % 12000UL) / 12000.0F;
-  const float angle = phase * 2.0F * PI;
-  const float x = 0.64F + (0.18F * sinf(angle));
-  const float y = 0.12F * cosf(angle * 0.8F);
-  const float z = 0.08F * sinf(angle * 0.55F);
-  const float battery = 4.20F - (0.12F * phase);
-  const float temperature = 32.0F + (0.8F * sinf(angle * 0.35F));
-
-  nodeDisplay.setTelemetry("TWR-01", x, y, z, battery, temperature);
-}
-
-void updateDemoLoraState(uint32_t now) {
-  const uint8_t nextState = static_cast<uint8_t>(
-      (now / DEMO_STATE_INTERVAL_MS) % DEMO_STATE_COUNT);
-  if (nextState == currentDemoState) {
-    return;
+  const TowerSensorData &sensorData = towerSensors.data();
+  if (sensorData.orientationValid) {
+    nodeDisplay.setAngles(sensorData.angleXDegrees, sensorData.angleYDegrees,
+                          sensorData.angleZDegrees);
+  } else {
+    nodeDisplay.setAngles(NAN, NAN, NAN);
   }
 
-  currentDemoState = nextState;
-  nodeDisplay.setLoraState(DEMO_STATES[currentDemoState]);
+  nodeDisplay.setTemperature(sensorData.temperatureValid
+                                 ? sensorData.temperatureCelsius
+                                 : NAN);
+
+  // LoRa/canh bao sau nay phai dung structuralRoll/Pitch/Tilt va
+  // tiltAlarmActive, khong dung truc tiep Fast Angle dang hien tren OLED.
 }

@@ -68,6 +68,7 @@ private:
   int16_t _temperatureX10;
   bool _temperatureValid;
   State _state;
+  bool _loraStateActive;
 
   uint8_t _frame;
   uint32_t _lastFrameAt;

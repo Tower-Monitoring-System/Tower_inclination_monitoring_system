@@ -35,6 +35,7 @@ Lora_Connect_Effect::Lora_Connect_Effect(TwoWire &wire, int8_t resetPin)
       _temperatureX10(320),
       _temperatureValid(true),
       _state(State::READY),
+      _loraStateActive(false),
       _frame(0),
       _lastFrameAt(0) {}
 
@@ -122,6 +123,18 @@ void Lora_Connect_Effect::setTemperature(float celsius) {
 }
 
 void Lora_Connect_Effect::setLoraState(State state) {
+  // Khong tu kich hoat trang thai LoRa khi thu vien vua khoi tao. Khi LoRa
+  // that duoc tich hop, lan goi setLoraState() dau tien se bat lai day du
+  // label va animation Ready/Sending/Success/Failed/Retry/Disconnected.
+  if (!_loraStateActive) {
+    _loraStateActive = true;
+    _state = state;
+    _frame = 0;
+    _lastFrameAt = 0;
+    _dirty = true;
+    return;
+  }
+
   if (_state == state) {
     return;
   }
@@ -248,29 +261,33 @@ void Lora_Connect_Effect::drawHeader() {
   _display.print("NODE");
   _display.setTextColor(SH110X_WHITE);
 
-  const char *label = stateLabel(_state);
-  const int16_t labelWidth = static_cast<int16_t>(strlen(label) * 6U);
-  const int16_t labelX = 31 + ((73 - labelWidth) / 2);
-  const bool alertFlash =
-      (_state == State::FAILED || _state == State::DISCONNECTED) &&
-      ((_frame % 2U) == 0U);
+  // Khong hien thi trang thai LoRa mo phong. Khu vuc nay chi duoc kich hoat
+  // sau khi code LoRa that goi setLoraState(...).
+  if (_loraStateActive) {
+    const char *label = stateLabel(_state);
+    const int16_t labelWidth = static_cast<int16_t>(strlen(label) * 6U);
+    const int16_t labelX = 31 + ((73 - labelWidth) / 2);
+    const bool alertFlash =
+        (_state == State::FAILED || _state == State::DISCONNECTED) &&
+        ((_frame % 2U) == 0U);
 
-  if (alertFlash) {
-    _display.fillRoundRect(labelX - 2, 0, labelWidth + 4, 10, 2,
-                           SH110X_WHITE);
-    _display.setTextColor(SH110X_BLACK);
-  }
-  _display.setCursor(labelX, 1);
-  _display.print(label);
-  _display.setTextColor(SH110X_WHITE);
+    if (alertFlash) {
+      _display.fillRoundRect(labelX - 2, 0, labelWidth + 4, 10, 2,
+                             SH110X_WHITE);
+      _display.setTextColor(SH110X_BLACK);
+    }
+    _display.setCursor(labelX, 1);
+    _display.print(label);
+    _display.setTextColor(SH110X_WHITE);
 
-  if (_state == State::SENDING) {
-    const uint8_t width = static_cast<uint8_t>(5U + ((_frame % 6U) * 6U));
-    _display.drawFastHLine(labelX, 9, width, SH110X_WHITE);
-  } else if (_state == State::RETRY) {
-    _display.drawPixel(labelX - 4, 3 + (_frame % 4U), SH110X_WHITE);
-    _display.drawPixel(labelX + labelWidth + 3, 6 - (_frame % 4U),
-                       SH110X_WHITE);
+    if (_state == State::SENDING) {
+      const uint8_t width = static_cast<uint8_t>(5U + ((_frame % 6U) * 6U));
+      _display.drawFastHLine(labelX, 9, width, SH110X_WHITE);
+    } else if (_state == State::RETRY) {
+      _display.drawPixel(labelX - 4, 3 + (_frame % 4U), SH110X_WHITE);
+      _display.drawPixel(labelX + labelWidth + 3, 6 - (_frame % 4U),
+                         SH110X_WHITE);
+    }
   }
 
   drawBatteryIcon(106, 1);
@@ -345,6 +362,10 @@ void Lora_Connect_Effect::drawWavePair(int16_t centerX, int16_t centerY,
 }
 
 void Lora_Connect_Effect::drawStateMark() {
+  if (!_loraStateActive) {
+    return;
+  }
+
   switch (_state) {
     case State::SENDING: {
       const int16_t packetX = 2 + static_cast<int16_t>((_frame % 6U) * 6U);
@@ -459,6 +480,10 @@ void Lora_Connect_Effect::drawTemperatureRow(int16_t y) {
 }
 
 uint8_t Lora_Connect_Effect::activeWaveCount() const {
+  if (!_loraStateActive) {
+    return 0;
+  }
+
   switch (_state) {
     case State::SENDING: {
       static const uint8_t sequence[] = {1, 2, 3, 2, 1, 2};
