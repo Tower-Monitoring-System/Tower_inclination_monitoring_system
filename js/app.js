@@ -12,7 +12,7 @@ import { SettingsPage } from "./pages/settingsPage.js?v=20260827.1";
 import { TowersPage } from "./pages/towersPage.js?v=20260825.1";
 import { AlertService } from "./services/alertService.js?v=20260824.3";
 import { ApiService } from "./services/apiService.js";
-import { AuthService } from "./services/authService.js?v=20260823.11";
+import { AuthService } from "./services/authService.js?v=20260828.1";
 import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260824.1";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
 import { SensorDataService } from "./services/sensorDataService.js?v=20260824.2";
@@ -36,6 +36,12 @@ const initialState = {
   },
   error: null
 };
+
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
+});
 
 let store;
 let dashboard;

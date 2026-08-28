@@ -1,7 +1,13 @@
 import { AUTH_CONFIG } from "./core/config.js";
-import { AuthService } from "./services/authService.js?v=20260823.11";
+import { AuthService } from "./services/authService.js?v=20260828.1";
 
 let authService = null;
+
+window.addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    window.location.reload();
+  }
+});
 
 bootstrapSignIn();
 
@@ -134,9 +140,14 @@ function initializeSignIn({ unavailableMessage = "" } = {}) {
       });
 
       if (!result.ok) {
+        const sessionFailure = result.reason === "service_error" || result.reason === "session_error";
         passwordInput.value = "";
-        showAuthenticationError("The username or password is incorrect.");
-        showToast("Sign in failed. Please try again.", "error");
+        showAuthenticationError(sessionFailure
+          ? "A secure sign-in session could not be established. Please try again."
+          : "The username or password is incorrect.");
+        showToast(sessionFailure
+          ? "Sign in service is temporarily unavailable."
+          : "Sign in failed. Please try again.", "error");
         setLoading(false);
         passwordInput.focus();
         return;
