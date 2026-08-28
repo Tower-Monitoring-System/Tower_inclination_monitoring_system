@@ -16,12 +16,6 @@ constexpr float DMP_ACCEL_LSB_PER_G = 8192.0F;
 constexpr float DMP_GYRO_LSB_PER_DPS = 16.4F;  // DMP dung +/-2000 dps.
 constexpr float QUATERNION_MIN_NORM = 0.85F;
 constexpr float QUATERNION_MAX_NORM = 1.15F;
-
-constexpr uint32_t LM35_SAMPLE_INTERVAL_MS = 10UL;
-constexpr uint32_t LM35_INVALID_TIMEOUT_MS = 2000UL;
-constexpr uint16_t LM35_MAX_VALID_MV = 1500U;
-constexpr float LM35_MV_PER_DEGREE_C = 10.0F;
-constexpr float LM35_FILTER_ALPHA = 0.18F;
 }  // namespace
 
 TowerSensors::TowerSensors(TwoWire &mpuWire, uint8_t mpuAddress)
@@ -29,6 +23,8 @@ TowerSensors::TowerSensors(TwoWire &mpuWire, uint8_t mpuAddress)
       _mpu(mpuAddress, &mpuWire),
       _mpuAddress(mpuAddress),
       _lm35Pin(0),
+      _batteryMeasurePin(0),
+      _batteryAdcPin(0),
       _mpuReady(false),
       _dmpPacketSize(0),
       _fifoBuffer{},
@@ -54,25 +50,58 @@ TowerSensors::TowerSensors(TwoWire &mpuWire, uint8_t mpuAddress)
       _alarmTransitionPending(false),
       _pendingAlarmState(false),
       _alarmConditionSince(0),
-      _lm35Samples{},
+      _lm35RawSamples{},
+      _lm35MilliVoltSamples{},
       _lm35SampleCount(0),
+      _lm35WarmupSamplesRemaining(0),
       _temperatureFilterInitialized(false),
+      _batteryState(BatteryState::IDLE),
+      _activeAdcProfile(AdcProfile::LM35_0_DB),
+      _batteryRawSamples{},
+      _batteryMilliVoltSamples{},
+      _batterySampleCount(0),
+      _batteryAttemptCount(0),
+      _batteryWarmupSamplesRemaining(0),
+      _batteryFailedCycles(0),
+      _batteryLastAdcMilliVolts(0),
+      _batteryFilterInitialized(false),
       _lastMpuInitAttemptAt(0),
       _lastMpuPacketAt(0),
       _lastAngleFilterAt(0),
       _lastStructuralBinAt(0),
       _lastLm35SampleAt(0),
-      _lastLm35ValidAt(0) {}
+      _lastLm35ValidAt(0),
+      _lastLm35DiagnosticAt(0),
+      _lastBatteryMeasurementAt(0),
+      _batteryStateStartedAt(0),
+      _lastBatteryDiagnosticAt(0) {}
 
 bool TowerSensors::begin(int8_t mpuSdaPin, int8_t mpuSclPin,
-                         uint8_t lm35Pin) {
+                         uint8_t lm35Pin, uint8_t batteryMeasurePin,
+                         uint8_t batteryAdcPin) {
   _lm35Pin = lm35Pin;
+  _batteryMeasurePin = batteryMeasurePin;
+  _batteryAdcPin = batteryAdcPin;
+
+  // Fail-safe: cau phan ap Battery phai OFF truoc moi thao tac khoi tao khac.
+  pinMode(_batteryMeasurePin, OUTPUT);
+  digitalWrite(_batteryMeasurePin, LOW);
+  pinMode(_batteryAdcPin, INPUT);
+
   pinMode(_lm35Pin, INPUT);
   analogReadResolution(12);
 
-  // LM35 o nhiet do moi truong nam trong mien 0 dB; muc suy hao nay cho do
-  // phan giai tot hon 11 dB. analogReadMilliVolts() van dung eFuse calibration.
-  analogSetPinAttenuation(_lm35Pin, ADC_0db);
+  // GPIO4 va GPIO27 cung thuoc ADC2. Arduino-ESP32 3.x dung chung mot
+  // calibration handle cho moi ADC unit, vi vay hai profile attenuation phai
+  // duoc dung tuan tu. Attach ca hai channel o 0 dB truoc, sau do moi chuyen
+  // toan ADC2 sang 11 dB trong cua so do Battery.
+  analogSetAttenuation(ADC_0db);
+  (void)analogRead(_lm35Pin);
+  (void)analogRead(_batteryAdcPin);
+  analogSetAttenuation(ADC_0db);
+  _activeAdcProfile = AdcProfile::LM35_0_DB;
+  _lm35WarmupSamplesRemaining =
+      TowerSensorConfig::LM35_WARMUP_SAMPLE_COUNT;
 
   _wire->begin(mpuSdaPin, mpuSclPin, MPU_I2C_CLOCK_HZ);
   _wire->setTimeOut(MPU_I2C_TIMEOUT_MS);
@@ -81,12 +110,19 @@ bool TowerSensors::begin(int8_t mpuSdaPin, int8_t mpuSclPin,
   const uint32_t now = millis();
   _lastLm35SampleAt = now;
   _lastLm35ValidAt = now;
+  _lastLm35DiagnosticAt = now;
+  _lastBatteryDiagnosticAt = now;
+  _lastBatteryMeasurementAt =
+      now - TowerSensorConfig::BATTERY_MEASUREMENT_INTERVAL_MS;
   return initializeMpu(now);
 }
 
 void TowerSensors::update(uint32_t now) {
   updateMpu(now);
-  updateLm35(now);
+  updateBattery(now);
+  if (_batteryState == BatteryState::IDLE) {
+    updateLm35(now);
+  }
 }
 
 const TowerSensorData &TowerSensors::data() const { return _data; }
@@ -525,21 +561,33 @@ void TowerSensors::markMpuUnavailable(uint32_t now, const char *reason) {
 }
 
 void TowerSensors::updateLm35(uint32_t now) {
-  if (now - _lastLm35SampleAt < LM35_SAMPLE_INTERVAL_MS) {
+  if (now - _lastLm35SampleAt <
+      TowerSensorConfig::LM35_SAMPLE_INTERVAL_MS) {
     return;
   }
   _lastLm35SampleAt = now;
 
+  const uint16_t raw = analogRead(_lm35Pin);
   const uint32_t milliVolts = analogReadMilliVolts(_lm35Pin);
-  if (milliVolts <= LM35_MAX_VALID_MV) {
-    _lm35Samples[_lm35SampleCount++] = static_cast<uint16_t>(milliVolts);
+
+  // Sau moi lan chuyen attenuation, bo cac conversion dau de sample-and-hold
+  // cua ADC2 nap lai theo nguon LM35 tro khang cao hon.
+  if (_lm35WarmupSamplesRemaining > 0U) {
+    --_lm35WarmupSamplesRemaining;
+  } else if (raw <= 4095U &&
+             milliVolts <= TowerSensorConfig::LM35_ADC_MAX_VALID_MV) {
+    _lm35RawSamples[_lm35SampleCount] = raw;
+    _lm35MilliVoltSamples[_lm35SampleCount] =
+        static_cast<uint16_t>(milliVolts);
+    ++_lm35SampleCount;
     if (_lm35SampleCount >= LM35_WINDOW_SIZE) {
       processLm35Window(now);
       _lm35SampleCount = 0;
     }
   }
 
-  if (now - _lastLm35ValidAt >= LM35_INVALID_TIMEOUT_MS) {
+  if (now - _lastLm35ValidAt >=
+      TowerSensorConfig::LM35_INVALID_TIMEOUT_MS) {
     _data.temperatureValid = false;
     _data.temperatureCelsius = NAN;
     _lm35SampleCount = 0;
@@ -548,33 +596,262 @@ void TowerSensors::updateLm35(uint32_t now) {
 }
 
 void TowerSensors::processLm35Window(uint32_t now) {
-  uint16_t sorted[LM35_WINDOW_SIZE];
-  memcpy(sorted, _lm35Samples, sizeof(sorted));
-  sortAscending(sorted, LM35_WINDOW_SIZE);
-
-  uint32_t sumMilliVolts = 0;
-  const uint8_t first = LM35_TRIM_COUNT;
-  const uint8_t last = LM35_WINDOW_SIZE - LM35_TRIM_COUNT;
-  for (uint8_t index = first; index < last; ++index) {
-    sumMilliVolts += sorted[index];
-  }
-
-  const uint8_t keptSamples = LM35_WINDOW_SIZE - (2U * LM35_TRIM_COUNT);
-  const float averageMilliVolts =
-      static_cast<float>(sumMilliVolts) / keptSamples;
+  const float averageRaw = trimmedMean(
+      _lm35RawSamples, LM35_WINDOW_SIZE,
+      TowerSensorConfig::LM35_TRIM_SAMPLES_PER_SIDE);
+  const float averageMilliVolts = trimmedMean(
+      _lm35MilliVoltSamples, LM35_WINDOW_SIZE,
+      TowerSensorConfig::LM35_TRIM_SAMPLES_PER_SIDE);
+  const float calibratedMilliVolts =
+      (averageMilliVolts * TowerSensorConfig::LM35_CALIBRATION_GAIN) +
+      TowerSensorConfig::LM35_CALIBRATION_OFFSET_MV;
   const float measuredTemperature =
-      averageMilliVolts / LM35_MV_PER_DEGREE_C;
+      calibratedMilliVolts / TowerSensorConfig::LM35_MV_PER_DEGREE_C;
+
+  if (!isfinite(calibratedMilliVolts) || calibratedMilliVolts < 0.0F ||
+      calibratedMilliVolts >
+          TowerSensorConfig::LM35_ADC_MAX_VALID_MV ||
+      !isfinite(measuredTemperature)) {
+    return;
+  }
 
   if (!_temperatureFilterInitialized) {
     _data.temperatureCelsius = measuredTemperature;
     _temperatureFilterInitialized = true;
   } else {
     _data.temperatureCelsius +=
-        LM35_FILTER_ALPHA * (measuredTemperature - _data.temperatureCelsius);
+        TowerSensorConfig::LM35_FILTER_ALPHA *
+        (measuredTemperature - _data.temperatureCelsius);
   }
 
   _data.temperatureValid = true;
   _lastLm35ValidAt = now;
+  printLm35Diagnostics(now, averageRaw, averageMilliVolts,
+                       calibratedMilliVolts, _data.temperatureCelsius);
+}
+
+void TowerSensors::setAdcProfile(AdcProfile profile) {
+  if (_activeAdcProfile == profile) {
+    return;
+  }
+
+  if (profile == AdcProfile::BATTERY_11_DB) {
+    analogSetAttenuation(ADC_11db);
+    _batteryWarmupSamplesRemaining =
+        TowerSensorConfig::BATTERY_WARMUP_SAMPLE_COUNT;
+  } else {
+    analogSetAttenuation(ADC_0db);
+    _lm35WarmupSamplesRemaining =
+        TowerSensorConfig::LM35_WARMUP_SAMPLE_COUNT;
+  }
+  _activeAdcProfile = profile;
+}
+
+void TowerSensors::printLm35Diagnostics(
+    uint32_t now, float averageRaw, float rawMilliVolts,
+    float calibratedMilliVolts, float temperatureCelsius) {
+  if (!TowerSensorConfig::ADC_DIAGNOSTICS_ENABLED ||
+      now - _lastLm35DiagnosticAt <
+          TowerSensorConfig::ADC_DIAGNOSTIC_INTERVAL_MS) {
+    return;
+  }
+  _lastLm35DiagnosticAt = now;
+
+  Serial.print("[ADC][LM35] raw=");
+  Serial.print(averageRaw, 1);
+  Serial.print(", adc=");
+  Serial.print(rawMilliVolts, 1);
+  Serial.print(" mV, calibrated=");
+  Serial.print(calibratedMilliVolts, 1);
+  Serial.print(" mV, temp=");
+  Serial.print(temperatureCelsius, 2);
+  Serial.println(" C");
+}
+
+void TowerSensors::updateBattery(uint32_t now) {
+  if (_batteryState != BatteryState::IDLE &&
+      now - _batteryStateStartedAt >=
+          TowerSensorConfig::BATTERY_MEASUREMENT_TIMEOUT_MS) {
+    abortBatteryMeasurement(now);
+    return;
+  }
+
+  switch (_batteryState) {
+    case BatteryState::IDLE:
+      if (now - _lastBatteryMeasurementAt >=
+          TowerSensorConfig::BATTERY_MEASUREMENT_INTERVAL_MS) {
+        startBatteryMeasurement(now);
+      }
+      break;
+
+    case BatteryState::SETTLING:
+      if (now - _batteryStateStartedAt >=
+          TowerSensorConfig::BATTERY_SETTLING_TIME_MS) {
+        _batteryState = BatteryState::SAMPLING;
+        sampleBattery(now);
+      }
+      break;
+
+    case BatteryState::SAMPLING:
+      sampleBattery(now);
+      break;
+  }
+}
+
+void TowerSensors::startBatteryMeasurement(uint32_t now) {
+  // Khong tron hai phan cua so LM35 nam hai ben lan chuyen attenuation.
+  _lm35SampleCount = 0;
+  _batterySampleCount = 0;
+  _batteryAttemptCount = 0;
+  _batteryLastAdcMilliVolts = 0;
+  setAdcProfile(AdcProfile::BATTERY_11_DB);
+  _batteryWarmupSamplesRemaining =
+      TowerSensorConfig::BATTERY_WARMUP_SAMPLE_COUNT;
+  _batteryStateStartedAt = now;
+  _batteryState = BatteryState::SETTLING;
+  digitalWrite(_batteryMeasurePin, HIGH);
+}
+
+void TowerSensors::sampleBattery(uint32_t now) {
+  uint8_t readsThisUpdate = 0;
+  while (readsThisUpdate < TowerSensorConfig::BATTERY_SAMPLES_PER_UPDATE &&
+         _batterySampleCount < TowerSensorConfig::BATTERY_SAMPLE_COUNT &&
+         _batteryAttemptCount <
+             TowerSensorConfig::BATTERY_MAX_SAMPLE_ATTEMPTS) {
+    const uint16_t raw = analogRead(_batteryAdcPin);
+    const uint32_t milliVolts = analogReadMilliVolts(_batteryAdcPin);
+    _batteryLastAdcMilliVolts = static_cast<uint16_t>(
+        min(milliVolts, static_cast<uint32_t>(UINT16_MAX)));
+    ++readsThisUpdate;
+
+    if (_batteryWarmupSamplesRemaining > 0U) {
+      --_batteryWarmupSamplesRemaining;
+      continue;
+    }
+
+    ++_batteryAttemptCount;
+    if (raw <= 4095U &&
+        milliVolts >= TowerSensorConfig::BATTERY_ADC_MIN_VALID_MV &&
+        milliVolts <= TowerSensorConfig::BATTERY_ADC_MAX_VALID_MV) {
+      _batteryRawSamples[_batterySampleCount] = raw;
+      _batteryMilliVoltSamples[_batterySampleCount] =
+          static_cast<uint16_t>(milliVolts);
+      ++_batterySampleCount;
+    }
+  }
+
+  if (_batterySampleCount >= TowerSensorConfig::BATTERY_SAMPLE_COUNT ||
+      _batteryAttemptCount >=
+          TowerSensorConfig::BATTERY_MAX_SAMPLE_ATTEMPTS) {
+    finishBatteryMeasurement(now);
+  }
+}
+
+void TowerSensors::finishBatteryMeasurement(uint32_t now) {
+  // Tat cau phan ap truoc khi xu ly so lieu de bao dam thoi gian ON ngan nhat.
+  digitalWrite(_batteryMeasurePin, LOW);
+  _batteryState = BatteryState::IDLE;
+  _lastBatteryMeasurementAt = now;
+  setAdcProfile(AdcProfile::LM35_0_DB);
+
+  if (_batterySampleCount <
+      TowerSensorConfig::BATTERY_MIN_VALID_SAMPLES) {
+    if (TowerSensorConfig::ADC_DIAGNOSTICS_ENABLED) {
+      Serial.print("[ADC][BAT] invalid samples=");
+      Serial.print(_batterySampleCount);
+      Serial.print('/');
+      Serial.print(_batteryAttemptCount);
+      Serial.print(", last=");
+      Serial.print(_batteryLastAdcMilliVolts);
+      Serial.println(" mV");
+    }
+    registerBatteryFailure();
+    return;
+  }
+
+  uint8_t trim = TowerSensorConfig::BATTERY_TRIM_SAMPLES_PER_SIDE;
+  if (static_cast<uint16_t>(trim) * 2U >= _batterySampleCount) {
+    trim = 0;
+  }
+  const float averageRaw =
+      trimmedMean(_batteryRawSamples, _batterySampleCount, trim);
+  const float averageMilliVolts = trimmedMean(
+      _batteryMilliVoltSamples, _batterySampleCount, trim);
+  const float dividedVoltage =
+      (averageMilliVolts * 0.001F) *
+      TowerSensorConfig::BATTERY_DIVIDER_RATIO;
+  const float calibratedVoltage =
+      (dividedVoltage * TowerSensorConfig::BATTERY_CALIBRATION_GAIN) +
+      TowerSensorConfig::BATTERY_CALIBRATION_OFFSET_VOLTS;
+
+  printBatteryDiagnostics(now, averageRaw, averageMilliVolts,
+                          dividedVoltage, calibratedVoltage);
+
+  if (!isfinite(calibratedVoltage) ||
+      calibratedVoltage < TowerSensorConfig::BATTERY_MIN_VALID_VOLTS ||
+      calibratedVoltage > TowerSensorConfig::BATTERY_MAX_VALID_VOLTS) {
+    registerBatteryFailure();
+    return;
+  }
+
+  if (!_batteryFilterInitialized) {
+    _data.batteryVoltage = calibratedVoltage;
+    _batteryFilterInitialized = true;
+  } else {
+    _data.batteryVoltage +=
+        TowerSensorConfig::BATTERY_FILTER_ALPHA *
+        (calibratedVoltage - _data.batteryVoltage);
+  }
+
+  _batteryFailedCycles = 0;
+  _data.batteryValid = true;
+}
+
+void TowerSensors::abortBatteryMeasurement(uint32_t now) {
+  digitalWrite(_batteryMeasurePin, LOW);
+  _batteryState = BatteryState::IDLE;
+  _lastBatteryMeasurementAt = now;
+  _batterySampleCount = 0;
+  _batteryAttemptCount = 0;
+  setAdcProfile(AdcProfile::LM35_0_DB);
+  registerBatteryFailure();
+  if (TowerSensorConfig::ADC_DIAGNOSTICS_ENABLED) {
+    Serial.println("[ADC][BAT] timeout; divider forced OFF");
+  }
+}
+
+void TowerSensors::registerBatteryFailure() {
+  if (_batteryFailedCycles < 255U) {
+    ++_batteryFailedCycles;
+  }
+  if (!_data.batteryValid ||
+      _batteryFailedCycles >=
+          TowerSensorConfig::BATTERY_FAILED_CYCLES_BEFORE_INVALID) {
+    _data.batteryVoltage = NAN;
+    _data.batteryValid = false;
+    _batteryFilterInitialized = false;
+  }
+}
+
+void TowerSensors::printBatteryDiagnostics(
+    uint32_t now, float averageRaw, float rawMilliVolts,
+    float dividedVoltage, float calibratedVoltage) {
+  if (!TowerSensorConfig::ADC_DIAGNOSTICS_ENABLED ||
+      now - _lastBatteryDiagnosticAt <
+          TowerSensorConfig::ADC_DIAGNOSTIC_INTERVAL_MS) {
+    return;
+  }
+  _lastBatteryDiagnosticAt = now;
+
+  Serial.print("[ADC][BAT] raw=");
+  Serial.print(averageRaw, 1);
+  Serial.print(", adc=");
+  Serial.print(rawMilliVolts, 1);
+  Serial.print(" mV, divider=");
+  Serial.print(dividedVoltage, 3);
+  Serial.print(" V, calibrated=");
+  Serial.print(calibratedVoltage, 3);
+  Serial.println(" V");
 }
 
 float TowerSensors::median(const float *values, uint8_t count) {
@@ -617,6 +894,28 @@ float TowerSensors::trimmedMean(const float *values, uint8_t count,
     sum += sorted[index];
   }
   return sum / static_cast<float>(last - trimPerSide);
+}
+
+float TowerSensors::trimmedMean(const uint16_t *values, uint8_t count,
+                                uint8_t trimPerSide) {
+  if (count == 0U || count > ADC_WINDOW_SIZE) {
+    return NAN;
+  }
+
+  uint16_t sorted[ADC_WINDOW_SIZE];
+  memcpy(sorted, values, count * sizeof(values[0]));
+  sortAscending(sorted, count);
+
+  if (static_cast<uint16_t>(trimPerSide) * 2U >= count) {
+    trimPerSide = 0;
+  }
+  const uint8_t last = count - trimPerSide;
+  uint32_t sum = 0;
+  for (uint8_t index = trimPerSide; index < last; ++index) {
+    sum += sorted[index];
+  }
+  return static_cast<float>(sum) /
+         static_cast<float>(last - trimPerSide);
 }
 
 float TowerSensors::medianAbsoluteDeviation(const float *values,

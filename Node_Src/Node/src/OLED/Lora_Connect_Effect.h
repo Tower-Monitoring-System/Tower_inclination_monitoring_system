@@ -33,6 +33,8 @@ public:
   // SDA = GPIO21, SCL = GPIO22. Khong remap chan SDA/SCL.
   bool begin(uint8_t i2cAddress = 0x3C);
   bool isReady() const;
+  void sleep();
+  void wake();
 
   void setTowerId(const char *towerId);
   void setAngles(float xDegrees, float yDegrees, float zDegrees);
@@ -59,6 +61,7 @@ private:
   Adafruit_SH1106G _display;
   bool _ready;
   bool _dirty;
+  bool _sleeping;
 
   char _towerId[MAX_TOWER_ID_LENGTH + 1];
   int16_t _anglesX100[3];

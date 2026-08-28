@@ -10,6 +10,16 @@ constexpr int16_t DIVIDER_X = 38;
 constexpr int16_t ANTENNA_X = 19;
 constexpr int16_t ANTENNA_Y = 21;
 
+// Duong cong xa cua LiFePO4 rat phang, vi vay cac nguong nay chi dung de tao
+// bieu tuong muc pin tuong doi. Dien ap so BAT:x.xxV moi la gia tri can dung.
+constexpr uint16_t LIFEPO4_4S_CRITICAL_CV = 1120U;
+constexpr uint16_t LIFEPO4_4S_LOW_CV = 1200U;
+constexpr uint16_t LIFEPO4_4S_MID_CV = 1260U;
+constexpr uint16_t LIFEPO4_4S_NORMAL_CV = 1300U;
+constexpr uint16_t LIFEPO4_4S_HIGH_CV = 1330U;
+constexpr uint16_t LIFEPO4_4S_FULL_CV = 1360U;
+constexpr float MAX_BATTERY_DISPLAY_VOLTS = 20.0F;
+
 template <typename T>
 T clampValue(T value, T minimum, T maximum) {
   if (value < minimum) {
@@ -27,6 +37,7 @@ Lora_Connect_Effect::Lora_Connect_Effect(TwoWire &wire, int8_t resetPin)
       _display(SCREEN_WIDTH, SCREEN_HEIGHT, &wire, resetPin),
       _ready(false),
       _dirty(true),
+      _sleeping(false),
       _towerId{"TWR-01"},
       _anglesX100{0, 0, 0},
       _angleValid{true, true, true},
@@ -57,11 +68,36 @@ bool Lora_Connect_Effect::begin(uint8_t i2cAddress) {
   _frame = 0;
   _lastFrameAt = 0;
   _dirty = true;
+  _sleeping = false;
   return true;
 }
 
 bool Lora_Connect_Effect::isReady() const { return _ready; }
 
+void Lora_Connect_Effect::sleep() {
+  if (!_ready || _sleeping) {
+    return;
+  }
+
+  _display.oled_command(SH110X_DISPLAYOFF);
+  _sleeping = true;
+}
+
+void Lora_Connect_Effect::wake() {
+  if (!_ready) {
+    return;
+  }
+
+  if (_sleeping) {
+    _display.oled_command(SH110X_DISPLAYON);
+    _sleeping = false;
+  }
+
+  // Lan bat OLED phai ve lai frame hien tai ngay lap tuc, khong cho animation
+  // cu quyet dinh thoi diem ve lai man hinh.
+  _lastFrameAt = 0;
+  _dirty = true;
+}
 void Lora_Connect_Effect::setTowerId(const char *towerId) {
   char nextId[MAX_TOWER_ID_LENGTH + 1] = "--";
   if (towerId != nullptr && towerId[0] != '\0') {
@@ -162,7 +198,7 @@ Lora_Connect_Effect::State Lora_Connect_Effect::loraState() const {
 void Lora_Connect_Effect::forceRedraw() { _dirty = true; }
 
 void Lora_Connect_Effect::update() {
-  if (!_ready) {
+  if (!_ready || _sleeping) {
     return;
   }
 
@@ -197,7 +233,8 @@ int16_t Lora_Connect_Effect::quantizeAngle(float degrees) {
 }
 
 uint16_t Lora_Connect_Effect::quantizeBattery(float voltage) {
-  const float limited = clampValue(voltage, 0.0F, 9.99F);
+  const float limited =
+      clampValue(voltage, 0.0F, MAX_BATTERY_DISPLAY_VOLTS);
   return static_cast<uint16_t>(lroundf(limited * 100.0F));
 }
 
@@ -508,11 +545,23 @@ uint8_t Lora_Connect_Effect::activeWaveCount() const {
 }
 
 uint8_t Lora_Connect_Effect::batteryPercent() const {
-  if (!_batteryValid || _batteryCentiVolts <= 320U) {
+  if (!_batteryValid || _batteryCentiVolts <= LIFEPO4_4S_CRITICAL_CV) {
     return 0;
   }
-  if (_batteryCentiVolts >= 420U) {
-    return 100;
+  if (_batteryCentiVolts < LIFEPO4_4S_LOW_CV) {
+    return 10;
   }
-  return static_cast<uint8_t>(_batteryCentiVolts - 320U);
+  if (_batteryCentiVolts < LIFEPO4_4S_MID_CV) {
+    return 30;
+  }
+  if (_batteryCentiVolts < LIFEPO4_4S_NORMAL_CV) {
+    return 55;
+  }
+  if (_batteryCentiVolts < LIFEPO4_4S_HIGH_CV) {
+    return 75;
+  }
+  if (_batteryCentiVolts < LIFEPO4_4S_FULL_CV) {
+    return 90;
+  }
+  return 100;
 }
