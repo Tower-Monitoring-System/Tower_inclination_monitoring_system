@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <time.h>
 
+#include "src/LoRa/MasterLoRaManager.h"
 #include "src/OLED/Wifi_Lora_Connect_Effect.h"
 
 const char *ssid = "TINIHI";                 // TINIHI && ESP32_Transmit
@@ -10,6 +11,14 @@ const char *password = "thanhnguyen201077";  // thanhnguyen201077 && 12345678
 constexpr int8_t OLED_SDA_PIN = 18;
 constexpr int8_t OLED_SCL_PIN = 19;
 constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;
+
+// AS32-TTL-100 / UART2. RX/TX theo yeu cau giao tiep; AUX/M0/M1 duoc tach
+constexpr int8_t LORA_RX_PIN = 16;
+constexpr int8_t LORA_TX_PIN = 17;
+constexpr int8_t LORA_AUX_PIN = 34;
+constexpr int8_t LORA_M0_PIN = 25;
+constexpr int8_t LORA_M1_PIN = 26;
+constexpr uint16_t EXPECTED_LORA_NODE_ID = 1U;
 
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 20000UL;
 constexpr uint32_t ESP32_RESTART_TIMEOUT_MS = 50000UL;
@@ -24,6 +33,10 @@ const char *NTP_SERVER_1 = "pool.ntp.org";
 const char *NTP_SERVER_2 = "time.nist.gov";
 
 Wifi_Lora_Connect_Effect connectionDisplay;
+HardwareSerial loraSerial(2);
+MasterLoRaManager masterLoRa(loraSerial, LORA_RX_PIN, LORA_TX_PIN,
+                            LORA_AUX_PIN, LORA_M0_PIN, LORA_M1_PIN,
+                            EXPECTED_LORA_NODE_ID);
 
 enum WifiState : uint8_t {
   WS_DISCONNECTED,
@@ -61,6 +74,8 @@ void handleWifiReconnect();
 void handleEsp32Restart();
 void startNtpIfNeeded();
 bool isNtpTimeSynchronized();
+void syncLoRaDashboardState();
+LoraDisplayState toDisplayState(MasterLoRaStatus status);
 
 void WiFiEvent(WiFiEvent_t event) {
   const uint32_t now = millis();
@@ -124,6 +139,9 @@ void setup() {
     connectionDisplay.ConnectingEffect(ConnectionType::WIFI);
   }
 
+  masterLoRa.begin(millis());
+  syncLoRaDashboardState();
+
   const uint32_t now = millis();
   wifiOutageActive = true;
   wifiOutageStartedAt = now;
@@ -137,6 +155,12 @@ void setup() {
 }
 
 void loop() {
+  // Dat receive path truoc moi nhanh Wi-Fi/OLED de Master van xu ly DATA va
+  // ACK trong luc reconnect, chay effect hay cho restart.
+  const uint32_t loopNow = millis();
+  masterLoRa.update(loopNow);
+  syncLoRaDashboardState();
+
   if (restartPending) {
     handleEsp32Restart();
     yield();
@@ -253,4 +277,25 @@ void startNtpIfNeeded() {
 
 bool isNtpTimeSynchronized() {
   return time(nullptr) >= MINIMUM_VALID_NTP_TIME;
+}
+
+void syncLoRaDashboardState() {
+  masterDashboardState.loraState = toDisplayState(masterLoRa.status());
+  masterDashboardState.nodeCount = masterLoRa.knownNodeCount();
+}
+
+LoraDisplayState toDisplayState(MasterLoRaStatus status) {
+  switch (status) {
+    case MasterLoRaStatus::STANDBY:
+      return LoraDisplayState::STANDBY;
+    case MasterLoRaStatus::RECEIVING:
+      return LoraDisplayState::RECEIVING;
+    case MasterLoRaStatus::ACKNOWLEDGING:
+      return LoraDisplayState::ACKNOWLEDGING;
+    case MasterLoRaStatus::ERROR:
+      return LoraDisplayState::ERROR;
+    case MasterLoRaStatus::DISCONNECTED:
+    default:
+      return LoraDisplayState::LOST;
+  }
 }

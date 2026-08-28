@@ -12,7 +12,9 @@ Wifi_Lora_Connect_Effect::Wifi_Lora_Connect_Effect(TwoWire &wire,
       _type(ConnectionType::WIFI),
       _frame(0),
       _lastFrameAt(0),
-      _holdUntil(0) {}
+      _holdUntil(0),
+      _lastDashboardLoraState(LoraDisplayState::STANDBY),
+      _dashboardStateInitialized(false) {}
 
 bool Wifi_Lora_Connect_Effect::begin(int8_t sdaPin, int8_t sclPin,
                                     uint8_t i2cAddress) {
@@ -105,14 +107,21 @@ void Wifi_Lora_Connect_Effect::MasterDashboard(
   }
 
   const bool changed = selectScreen(Screen::DASHBOARD, ConnectionType::WIFI);
+  const bool loraStateChanged = !_dashboardStateInitialized ||
+                                _lastDashboardLoraState != state.loraState;
   const bool animationActive =
       state.loraState == LoraDisplayState::CONNECTING ||
+      state.loraState == LoraDisplayState::RECEIVING ||
+      state.loraState == LoraDisplayState::ACKNOWLEDGING ||
       state.sheetState == SheetDisplayState::SYNCING ||
       state.sheetState == SheetDisplayState::SENDING;
   const uint16_t frameInterval = animationActive ? 180 : 420;
-  if (!frameDue(millis(), frameInterval, changed)) {
+  if (!frameDue(millis(), frameInterval, changed || loraStateChanged)) {
     return;
   }
+
+  _lastDashboardLoraState = state.loraState;
+  _dashboardStateInitialized = true;
 
   _display.clearDisplay();
   drawDashboardHeader(state);
@@ -460,6 +469,11 @@ void Wifi_Lora_Connect_Effect::drawGatewayIcon(
   } else if (loraState == LoraDisplayState::STANDBY) {
     static const uint8_t standbyPulse[] = {1, 1, 2, 2, 1, 1};
     waveLevel = standbyPulse[frame % 6];
+  } else if (loraState == LoraDisplayState::RECEIVING) {
+    waveLevel = 3;
+  } else if (loraState == LoraDisplayState::ACKNOWLEDGING) {
+    static const uint8_t ackPulse[] = {3, 2, 1, 2};
+    waveLevel = ackPulse[frame % 4];
   } else {
     waveLevel = 0;
   }
@@ -487,7 +501,9 @@ void Wifi_Lora_Connect_Effect::drawGatewayIcon(
   _display.drawPixel(3 + groundPhase, 51, SH110X_WHITE);
   _display.drawPixel(31 - groundPhase, 51, SH110X_WHITE);
 
-  if (loraState == LoraDisplayState::LOST && (frame % 2) == 0) {
+  if ((loraState == LoraDisplayState::LOST ||
+       loraState == LoraDisplayState::ERROR) &&
+      (frame % 2) == 0) {
     _display.drawLine(11, 19, 23, 31, SH110X_WHITE);
     _display.drawLine(23, 19, 11, 31, SH110X_WHITE);
   }
@@ -535,6 +551,15 @@ void Wifi_Lora_Connect_Effect::drawDashboardRows(
       } else {
         snprintf(line, sizeof(line), "LORA:LINK");
       }
+      break;
+    case LoraDisplayState::RECEIVING:
+      snprintf(line, sizeof(line), "LORA:RECEIVING");
+      break;
+    case LoraDisplayState::ACKNOWLEDGING:
+      snprintf(line, sizeof(line), "LORA:SEND ACK");
+      break;
+    case LoraDisplayState::ERROR:
+      snprintf(line, sizeof(line), "LORA:ERROR");
       break;
     case LoraDisplayState::LOST:
       snprintf(line, sizeof(line), "LORA:LOST");

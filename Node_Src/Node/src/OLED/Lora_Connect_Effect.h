@@ -9,6 +9,7 @@
 // Trang thai nay chi dieu khien giao dien. Phan LoRa that van duoc xu ly
 // boi sketch chinh va chi can day trang thai moi sang thu vien.
 enum class LoraNodeState : uint8_t {
+  SLEEP,
   READY,
   SENDING,
   SUCCESS,

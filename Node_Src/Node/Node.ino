@@ -1,4 +1,5 @@
 #include "src/OLED/Lora_Connect_Effect.h"
+#include "src/LoRa/NodeLoRaManager.h"
 #include "src/Sensors/Tower_Sensors.h"
 
 // OLED SH1106G 1.3 inch dung I2C hardware mac dinh cua ESP32 WROOM:
@@ -12,6 +13,14 @@ constexpr uint8_t LM35_PIN = 4;
 constexpr uint8_t BATTERY_MEASURE_PIN = 26;
 constexpr uint8_t BATTERY_ADC_PIN = 27;
 
+// AS32-TTL-100 / UART2. Schematic PCB hien co khong gan net label cho
+constexpr int8_t LORA_RX_PIN = 16;
+constexpr int8_t LORA_TX_PIN = 17;
+constexpr int8_t LORA_AUX_PIN = 34;
+constexpr int8_t LORA_M0_PIN = 33;
+constexpr int8_t LORA_M1_PIN = 32;
+constexpr uint16_t LORA_NODE_ID = 1U;
+
 // Button SET: tich cuc muc LOW, co R6 = 10 kOhm keo len 3V3 va
 // C10 = 100 nF loc nhieu theo schematic.
 constexpr uint8_t OLED_BUTTON_PIN = 23;
@@ -22,6 +31,9 @@ constexpr uint32_t OLED_TELEMETRY_INTERVAL_MS = 67UL;  // Xap xi 15 FPS.
 Lora_Connect_Effect nodeDisplay;
 TwoWire mpuWire(1);
 TowerSensors towerSensors(mpuWire);
+HardwareSerial loraSerial(2);
+NodeLoRaManager nodeLoRa(loraSerial, LORA_RX_PIN, LORA_TX_PIN, LORA_AUX_PIN,
+                        LORA_M0_PIN, LORA_M1_PIN, LORA_NODE_ID);
 
 uint32_t lastOledTelemetryAt = 0;
 uint32_t oledAwakeSince = 0;
@@ -29,11 +41,15 @@ uint32_t buttonLastTransitionAt = 0;
 bool oledAwake = false;
 bool buttonRawState = HIGH;
 bool buttonStableState = HIGH;
+NodeLoRaStatus lastLoRaStatus = NodeLoRaStatus::DISCONNECTED;
+bool loRaStatusInitialized = false;
 
 void updateDisplayFromSensors(uint32_t now);
 void updateOledButton(uint32_t now);
 void wakeOled(uint32_t now);
 void sleepOled();
+void syncLoRaDisplayState();
+LoraNodeState toDisplayState(NodeLoRaStatus status);
 
 void setup() {
   // Tat bo chia ap ngay tu dau qua trinh khoi dong. GPIO26 chi duoc bat trong
@@ -61,6 +77,7 @@ void setup() {
   nodeDisplay.setAngles(NAN, NAN, NAN);
   nodeDisplay.setTemperature(NAN);
   nodeDisplay.setBatteryVoltage(NAN);
+  nodeDisplay.setLoraState(LoraNodeState::SLEEP);
   nodeDisplay.sleep();
   oledAwake = false;
 
@@ -68,6 +85,9 @@ void setup() {
                           BATTERY_MEASURE_PIN, BATTERY_ADC_PIN)) {
     Serial.println("[SENSOR] OLED/LM35 van tiep tuc; MPU6050 se tu thu lai.");
   }
+
+  nodeLoRa.begin(millis());
+  syncLoRaDisplayState();
 }
 
 void loop() {
@@ -76,6 +96,8 @@ void loop() {
   // Cam bien van cap nhat lien tuc nhu thuat toan cu. Button chi dieu khien
   // viec OLED co duoc bat va ve frame hay khong.
   towerSensors.update(now);
+  nodeLoRa.update(now, towerSensors.data());
+  syncLoRaDisplayState();
   updateOledButton(now);
 
   if (oledAwake) {
@@ -155,4 +177,35 @@ void updateDisplayFromSensors(uint32_t now) {
 
   // LoRa/canh bao sau nay phai dung structuralRoll/Pitch/Tilt va
   // tiltAlarmActive, khong dung truc tiep Fast Angle dang hien tren OLED.
+}
+
+void syncLoRaDisplayState() {
+  const NodeLoRaStatus status = nodeLoRa.status();
+  if (loRaStatusInitialized && status == lastLoRaStatus) {
+    return;
+  }
+
+  lastLoRaStatus = status;
+  loRaStatusInitialized = true;
+  nodeDisplay.setLoraState(toDisplayState(status));
+}
+
+LoraNodeState toDisplayState(NodeLoRaStatus status) {
+  switch (status) {
+    case NodeLoRaStatus::SLEEP:
+      return LoraNodeState::SLEEP;
+    case NodeLoRaStatus::READY:
+      return LoraNodeState::READY;
+    case NodeLoRaStatus::SENDING:
+      return LoraNodeState::SENDING;
+    case NodeLoRaStatus::SUCCESS:
+      return LoraNodeState::SUCCESS;
+    case NodeLoRaStatus::RETRY:
+      return LoraNodeState::RETRY;
+    case NodeLoRaStatus::FAILED:
+      return LoraNodeState::FAILED;
+    case NodeLoRaStatus::DISCONNECTED:
+    default:
+      return LoraNodeState::DISCONNECTED;
+  }
 }

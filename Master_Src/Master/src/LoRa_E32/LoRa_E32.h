@@ -45,7 +45,7 @@
 	#include <SoftwareSerial.h>
 #endif
 
-#include <includes/statesNaming.h>
+#include "includes/statesNaming.h"
 
 #if ARDUINO >= 100
 #include "Arduino.h"
@@ -210,6 +210,9 @@ class LoRa_E32 {
 
 		bool begin();
         Status setMode(MODE_TYPE mode);
+        // Chi dieu khien M0/M1 va cap nhat mode, khong busy-wait. Caller phai
+        // dung millis() + AUX de xac nhan module da chuyen mode hoan tat.
+        Status setModePinsNoWait(MODE_TYPE mode);
         MODE_TYPE getMode();
 
 		ResponseStructContainer getConfiguration();

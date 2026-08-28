@@ -487,6 +487,37 @@ method to set the mode (program, normal, etc.)
 
 */
 
+Status LoRa_E32::setModePinsNoWait(MODE_TYPE mode) {
+	if (this->m0Pin == -1 || this->m1Pin == -1) {
+		return ERR_E32_INVALID_PARAM;
+	}
+
+	switch (mode)
+	{
+	  case MODE_0_NORMAL:
+		digitalWrite(this->m0Pin, LOW);
+		digitalWrite(this->m1Pin, LOW);
+		break;
+	  case MODE_1_WAKE_UP:
+		digitalWrite(this->m0Pin, HIGH);
+		digitalWrite(this->m1Pin, LOW);
+		break;
+	  case MODE_2_POWER_SAVING:
+		digitalWrite(this->m0Pin, LOW);
+		digitalWrite(this->m1Pin, HIGH);
+		break;
+	  case MODE_3_SLEEP:
+		digitalWrite(this->m0Pin, HIGH);
+		digitalWrite(this->m1Pin, HIGH);
+		break;
+	  default:
+		return ERR_E32_INVALID_PARAM;
+	}
+
+	this->mode = mode;
+	return E32_SUCCESS;
+}
+
 Status LoRa_E32::setMode(MODE_TYPE mode) {
 
 	// data sheet claims module needs some extra time after mode setting (2ms)

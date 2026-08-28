@@ -15,6 +15,9 @@ enum class LoraDisplayState : uint8_t {
   STANDBY,
   CONNECTING,
   CONNECTED,
+  RECEIVING,
+  ACKNOWLEDGING,
+  ERROR,
   LOST
 };
 
@@ -86,6 +89,8 @@ private:
   uint8_t _frame;
   uint32_t _lastFrameAt;
   uint32_t _holdUntil;
+  LoraDisplayState _lastDashboardLoraState;
+  bool _dashboardStateInitialized;
 
   bool selectScreen(Screen screen, ConnectionType type);
   bool frameDue(uint32_t now, uint16_t interval, bool screenChanged);

@@ -161,7 +161,7 @@ void Lora_Connect_Effect::setTemperature(float celsius) {
 void Lora_Connect_Effect::setLoraState(State state) {
   // Khong tu kich hoat trang thai LoRa khi thu vien vua khoi tao. Khi LoRa
   // that duoc tich hop, lan goi setLoraState() dau tien se bat lai day du
-  // label va animation Ready/Sending/Success/Failed/Retry/Disconnected.
+  // label va animation Sleep/Ready/Sending/Success/Failed/Retry/Disconnected.
   if (!_loraStateActive) {
     _loraStateActive = true;
     _state = state;
@@ -245,6 +245,8 @@ int16_t Lora_Connect_Effect::quantizeTemperature(float celsius) {
 
 const char *Lora_Connect_Effect::stateLabel(State state) {
   switch (state) {
+    case State::SLEEP:
+      return "SLEEP";
     case State::SENDING:
       return "SENDING";
     case State::SUCCESS:
@@ -263,6 +265,8 @@ const char *Lora_Connect_Effect::stateLabel(State state) {
 
 uint16_t Lora_Connect_Effect::animationInterval(State state) {
   switch (state) {
+    case State::SLEEP:
+      return 1000;
     case State::SENDING:
       return 120;
     case State::SUCCESS:
@@ -404,6 +408,11 @@ void Lora_Connect_Effect::drawStateMark() {
   }
 
   switch (_state) {
+    case State::SLEEP:
+      // Radio ngu nen khong ve song vo tuyen. Trang thai nay chi duoc luu
+      // trong RAM va khong lam OLED tu bat day.
+      break;
+
     case State::SENDING: {
       const int16_t packetX = 2 + static_cast<int16_t>((_frame % 6U) * 6U);
       _display.fillRect(packetX, 13, 2, 2, SH110X_WHITE);
@@ -522,6 +531,8 @@ uint8_t Lora_Connect_Effect::activeWaveCount() const {
   }
 
   switch (_state) {
+    case State::SLEEP:
+      return 0;
     case State::SENDING: {
       static const uint8_t sequence[] = {1, 2, 3, 2, 1, 2};
       return sequence[_frame % 6U];
