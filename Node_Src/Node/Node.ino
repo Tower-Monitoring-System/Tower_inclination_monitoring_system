@@ -2,18 +2,19 @@
 #include "src/LoRa/NodeLoRaManager.h"
 #include "src/Sensors/Tower_Sensors.h"
 
-// OLED SH1106G 1.3 inch dung I2C hardware mac dinh cua ESP32 WROOM:
-// SDA = GPIO21, SCL = GPIO22. Khong remap SDA/SCL sang GPIO khac.
+//-------------- OLED SH1106G 1.3 inch --------------//
+// SDA = GPIO21, SCL = GPIO22
 constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;
 
-// MPU6050 dung controller I2C thu hai, tach hoan toan khoi bus OLED.
+//-------------- MPU6050 --------------//
+// SDA = GPIO21, SCL = GPIO22
 constexpr int8_t MPU6050_SDA_PIN = 18;
 constexpr int8_t MPU6050_SCL_PIN = 19;
 constexpr uint8_t LM35_PIN = 4;
 constexpr uint8_t BATTERY_MEASURE_PIN = 26;
 constexpr uint8_t BATTERY_ADC_PIN = 27;
 
-// AS32-TTL-100 / UART2. Schematic PCB hien co khong gan net label cho
+//-------------- AS32-TTL-100 / UART2 --------------//
 constexpr int8_t LORA_RX_PIN = 16;
 constexpr int8_t LORA_TX_PIN = 17;
 constexpr int8_t LORA_AUX_PIN = 34;
@@ -21,8 +22,7 @@ constexpr int8_t LORA_M0_PIN = 33;
 constexpr int8_t LORA_M1_PIN = 32;
 constexpr uint16_t LORA_NODE_ID = 1U;
 
-// Button SET: tich cuc muc LOW, co R6 = 10 kOhm keo len 3V3 va
-// C10 = 100 nF loc nhieu theo schematic.
+//---------- Button SET: tich cuc muc LOW ----------//
 constexpr uint8_t OLED_BUTTON_PIN = 23;
 constexpr uint32_t OLED_ON_DURATION_MS = 15000UL;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 35UL;
@@ -52,12 +52,9 @@ void syncLoRaDisplayState();
 LoraNodeState toDisplayState(NodeLoRaStatus status);
 
 void setup() {
-  // Tat bo chia ap ngay tu dau qua trinh khoi dong. GPIO26 chi duoc bat trong
-  // cua so do ngan de tranh dong ro lien tuc tu pin LiFePO4 4S.
   pinMode(BATTERY_MEASURE_PIN, OUTPUT);
   digitalWrite(BATTERY_MEASURE_PIN, LOW);
 
-  // Button tren GPIO23 keo len 3V3 va bam se keo xuong GND.
   pinMode(OLED_BUTTON_PIN, INPUT);
   buttonRawState = digitalRead(OLED_BUTTON_PIN);
   buttonStableState = buttonRawState;
@@ -71,9 +68,6 @@ void setup() {
   }
 
   nodeDisplay.setTowerId("TWR-01");
-
-  // Khong dung du lieu mo phong. Cac gia tri chua co du lieu that duoc luu
-  // bang placeholder trong RAM, nhung OLED mac dinh ngu de tiet kiem pin.
   nodeDisplay.setAngles(NAN, NAN, NAN);
   nodeDisplay.setTemperature(NAN);
   nodeDisplay.setBatteryVoltage(NAN);
@@ -92,9 +86,6 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
-
-  // Cam bien van cap nhat lien tuc nhu thuat toan cu. Button chi dieu khien
-  // viec OLED co duoc bat va ve frame hay khong.
   towerSensors.update(now);
   nodeLoRa.update(now, towerSensors.data());
   syncLoRaDisplayState();
@@ -174,9 +165,6 @@ void updateDisplayFromSensors(uint32_t now) {
   nodeDisplay.setBatteryVoltage(sensorData.batteryValid
                                     ? sensorData.batteryVoltage
                                     : NAN);
-
-  // LoRa/canh bao sau nay phai dung structuralRoll/Pitch/Tilt va
-  // tiltAlarmActive, khong dung truc tiep Fast Angle dang hien tren OLED.
 }
 
 void syncLoRaDisplayState() {

@@ -3,11 +3,8 @@
 
 #include <Arduino.h>
 #include <Wire.h>
-
 #include "Adafruit_SH110X.h"
 
-// Trang thai nay chi dieu khien giao dien. Phan LoRa that van duoc xu ly
-// boi sketch chinh va chi can day trang thai moi sang thu vien.
 enum class LoraNodeState : uint8_t {
   SLEEP,
   READY,
@@ -29,9 +26,6 @@ public:
   using State = LoraNodeState;
 
   explicit Lora_Connect_Effect(TwoWire &wire = Wire, int8_t resetPin = -1);
-
-  // Khoi tao bang I2C hardware mac dinh cua ESP32 (Wire):
-  // SDA = GPIO21, SCL = GPIO22. Khong remap chan SDA/SCL.
   bool begin(uint8_t i2cAddress = 0x3C);
   bool isReady() const;
   void sleep();

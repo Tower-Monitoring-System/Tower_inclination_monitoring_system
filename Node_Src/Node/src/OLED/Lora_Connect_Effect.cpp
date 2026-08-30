@@ -9,6 +9,8 @@ constexpr int16_t DATA_X = 43;
 constexpr int16_t DIVIDER_X = 38;
 constexpr int16_t ANTENNA_X = 19;
 constexpr int16_t ANTENNA_Y = 21;
+constexpr uint32_t OLED_I2C_CLOCK_HZ = 400000UL;
+constexpr uint32_t LOW_BATTERY_BLINK_INTERVAL_MS = 500UL;
 
 // Duong cong xa cua LiFePO4 rat phang, vi vay cac nguong nay chi dung de tao
 // bieu tuong muc pin tuong doi. Dien ap so BAT:x.xxV moi la gia tri can dung.
@@ -29,6 +31,19 @@ T clampValue(T value, T minimum, T maximum) {
     return maximum;
   }
   return value;
+}
+
+uint8_t interpolateBatteryPercent(uint16_t value, uint16_t lowVoltage,
+                                  uint16_t highVoltage, uint8_t lowPercent,
+                                  uint8_t highPercent) {
+  if (highVoltage <= lowVoltage || highPercent <= lowPercent) {
+    return lowPercent;
+  }
+  const uint32_t numerator =
+      static_cast<uint32_t>(value - lowVoltage) *
+      static_cast<uint32_t>(highPercent - lowPercent);
+  const uint32_t denominator = highVoltage - lowVoltage;
+  return static_cast<uint8_t>(lowPercent + (numerator / denominator));
 }
 }  // namespace
 
@@ -51,13 +66,15 @@ Lora_Connect_Effect::Lora_Connect_Effect(TwoWire &wire, int8_t resetPin)
       _lastFrameAt(0) {}
 
 bool Lora_Connect_Effect::begin(uint8_t i2cAddress) {
-  // Adafruit_I2CDevice ben trong _display.begin() se goi Wire.begin()
-  // khong truyen SDA/SCL, vi vay ESP32 su dung I2C hardware mac dinh:
-  // SDA = GPIO21, SCL = GPIO22.
   _ready = _display.begin(i2cAddress, true);
   if (!_ready) {
     return false;
   }
+
+  // SH1106 cap nhat ca framebuffer moi lan display(). Dat bus OLED len
+  // Fast-mode 400 kHz de frame 128x64 khong chiem qua nhieu thoi gian loop,
+  // tranh lam MPU6050 FIFO va state machine LoRa bi cham theo.
+  _wire->setClock(OLED_I2C_CLOCK_HZ);
 
   _display.clearDisplay();
   _display.setTextColor(SH110X_WHITE);
@@ -203,7 +220,12 @@ void Lora_Connect_Effect::update() {
   }
 
   const uint32_t now = millis();
-  if (!_dirty && (now - _lastFrameAt) < animationInterval(_state)) {
+  uint16_t refreshInterval = animationInterval(_state);
+  if (_batteryValid && batteryPercent() <= 15U &&
+      refreshInterval > LOW_BATTERY_BLINK_INTERVAL_MS) {
+    refreshInterval = LOW_BATTERY_BLINK_INTERVAL_MS;
+  }
+  if (!_dirty && (now - _lastFrameAt) < refreshInterval) {
     return;
   }
 
@@ -302,8 +324,6 @@ void Lora_Connect_Effect::drawHeader() {
   _display.print("NODE");
   _display.setTextColor(SH110X_WHITE);
 
-  // Khong hien thi trang thai LoRa mo phong. Khu vuc nay chi duoc kich hoat
-  // sau khi code LoRa that goi setLoraState(...).
   if (_loraStateActive) {
     const char *label = stateLabel(_state);
     const int16_t labelWidth = static_cast<int16_t>(strlen(label) * 6U);
@@ -350,7 +370,11 @@ void Lora_Connect_Effect::drawBatteryIcon(int16_t x, int16_t y) {
   if (percent > 0U && fillWidth == 0U) {
     fillWidth = 1U;
   }
-  if (percent <= 15U && (_frame % 2U) != 0U) {
+  // Blink theo thoi gian thuc, khong theo _frame. _frame co the tang rat nhanh
+  // khi telemetry lam OLED redraw lien tuc, neu dung _frame icon pin se nhap
+  // nhay nhanh/cham tuy tai he thong.
+  if (percent <= 15U &&
+      ((millis() / LOW_BATTERY_BLINK_INTERVAL_MS) & 1U) != 0U) {
     fillWidth = 0U;
   }
   if (fillWidth > 0U) {
@@ -360,7 +384,6 @@ void Lora_Connect_Effect::drawBatteryIcon(int16_t x, int16_t y) {
 
 void Lora_Connect_Effect::drawRadioTower() {
   const uint8_t waveCount = activeWaveCount();
-  // Ban kinh lon nhat dung tai y=12, khong cham vao header o y=10.
   static const uint8_t radii[] = {4, 7, 10};
   for (uint8_t index = 0; index < waveCount; ++index) {
     drawWavePair(ANTENNA_X, ANTENNA_Y, radii[index]);
@@ -368,8 +391,6 @@ void Lora_Connect_Effect::drawRadioTower() {
 
   _display.fillCircle(ANTENNA_X, ANTENNA_Y, 1, SH110X_WHITE);
   _display.drawFastVLine(ANTENNA_X, ANTENNA_Y + 2, 12, SH110X_WHITE);
-
-  // Khung thap nho gon, co cac thanh giang cheo nhu hinh tham khao.
   _display.drawLine(ANTENNA_X, 27, 7, 58, SH110X_WHITE);
   _display.drawLine(ANTENNA_X, 27, 31, 58, SH110X_WHITE);
   _display.drawFastHLine(15, 35, 9, SH110X_WHITE);
@@ -560,19 +581,26 @@ uint8_t Lora_Connect_Effect::batteryPercent() const {
     return 0;
   }
   if (_batteryCentiVolts < LIFEPO4_4S_LOW_CV) {
-    return 10;
+    return interpolateBatteryPercent(_batteryCentiVolts,
+                                     LIFEPO4_4S_CRITICAL_CV,
+                                     LIFEPO4_4S_LOW_CV, 0U, 10U);
   }
   if (_batteryCentiVolts < LIFEPO4_4S_MID_CV) {
-    return 30;
+    return interpolateBatteryPercent(_batteryCentiVolts, LIFEPO4_4S_LOW_CV,
+                                     LIFEPO4_4S_MID_CV, 10U, 30U);
   }
   if (_batteryCentiVolts < LIFEPO4_4S_NORMAL_CV) {
-    return 55;
+    return interpolateBatteryPercent(_batteryCentiVolts, LIFEPO4_4S_MID_CV,
+                                     LIFEPO4_4S_NORMAL_CV, 30U, 55U);
   }
   if (_batteryCentiVolts < LIFEPO4_4S_HIGH_CV) {
-    return 75;
+    return interpolateBatteryPercent(_batteryCentiVolts,
+                                     LIFEPO4_4S_NORMAL_CV,
+                                     LIFEPO4_4S_HIGH_CV, 55U, 75U);
   }
   if (_batteryCentiVolts < LIFEPO4_4S_FULL_CV) {
-    return 90;
+    return interpolateBatteryPercent(_batteryCentiVolts, LIFEPO4_4S_HIGH_CV,
+                                     LIFEPO4_4S_FULL_CV, 75U, 100U);
   }
   return 100;
 }

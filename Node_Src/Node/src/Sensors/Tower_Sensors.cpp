@@ -56,7 +56,6 @@ TowerSensors::TowerSensors(TwoWire &mpuWire, uint8_t mpuAddress)
       _lm35WarmupSamplesRemaining(0),
       _temperatureFilterInitialized(false),
       _batteryState(BatteryState::IDLE),
-      _activeAdcProfile(AdcProfile::LM35_0_DB),
       _batteryRawSamples{},
       _batteryMilliVoltSamples{},
       _batterySampleCount(0),
@@ -91,15 +90,13 @@ bool TowerSensors::begin(int8_t mpuSdaPin, int8_t mpuSclPin,
   pinMode(_lm35Pin, INPUT);
   analogReadResolution(12);
 
-  // GPIO4 va GPIO27 cung thuoc ADC2. Arduino-ESP32 3.x dung chung mot
-  // calibration handle cho moi ADC unit, vi vay hai profile attenuation phai
-  // duoc dung tuan tu. Attach ca hai channel o 0 dB truoc, sau do moi chuyen
-  // toan ADC2 sang 11 dB trong cua so do Battery.
-  analogSetAttenuation(ADC_0db);
+  // Cau hinh attenuation rieng cho tung channel. Khong dung
+  // analogSetAttenuation() toan cuc vi no lam thay doi ca LM35 va Battery moi
+  // khi do pin. GPIO4 luon 0 dB, GPIO27 luon 11 dB.
+  analogSetPinAttenuation(_lm35Pin, ADC_0db);
+  analogSetPinAttenuation(_batteryAdcPin, ADC_11db);
   (void)analogRead(_lm35Pin);
   (void)analogRead(_batteryAdcPin);
-  analogSetAttenuation(ADC_0db);
-  _activeAdcProfile = AdcProfile::LM35_0_DB;
   _lm35WarmupSamplesRemaining =
       TowerSensorConfig::LM35_WARMUP_SAMPLE_COUNT;
 
@@ -120,9 +117,9 @@ bool TowerSensors::begin(int8_t mpuSdaPin, int8_t mpuSclPin,
 void TowerSensors::update(uint32_t now) {
   updateMpu(now);
   updateBattery(now);
-  if (_batteryState == BatteryState::IDLE) {
-    updateLm35(now);
-  }
+  // LM35 va Battery co attenuation rieng tung pin, nen khong can dung LM35
+  // trong cua so do Battery. Hai phep doc van dien ra tuan tu trong loop.
+  updateLm35(now);
 }
 
 const TowerSensorData &TowerSensors::data() const { return _data; }
@@ -236,6 +233,14 @@ void TowerSensors::updateMpu(uint32_t now) {
   memset(_fifoBuffer, 0xA5, _dmpPacketSize);
   _mpu.getFIFOBytes(_fifoBuffer, static_cast<uint8_t>(_dmpPacketSize));
   processDmpPacket(now);
+
+  // processDmpPacket() chi cap nhat _lastMpuPacketAt khi quaternion/YPR hop le.
+  // Neu FIFO van co byte nhung du lieu DMP hong lien tuc, nhanh fifoCount<packet
+  // o tren se khong bao gio bat timeout. Kiem tra freshness sau moi packet de
+  // tranh giu mai mot goc cu va van danh dau orientationValid=true.
+  if (now - _lastMpuPacketAt >= MPU_PACKET_TIMEOUT_MS) {
+    markMpuUnavailable(now, "invalid DMP packet timeout");
+  }
 }
 
 void TowerSensors::processDmpPacket(uint32_t now) {
@@ -630,23 +635,6 @@ void TowerSensors::processLm35Window(uint32_t now) {
                        calibratedMilliVolts, _data.temperatureCelsius);
 }
 
-void TowerSensors::setAdcProfile(AdcProfile profile) {
-  if (_activeAdcProfile == profile) {
-    return;
-  }
-
-  if (profile == AdcProfile::BATTERY_11_DB) {
-    analogSetAttenuation(ADC_11db);
-    _batteryWarmupSamplesRemaining =
-        TowerSensorConfig::BATTERY_WARMUP_SAMPLE_COUNT;
-  } else {
-    analogSetAttenuation(ADC_0db);
-    _lm35WarmupSamplesRemaining =
-        TowerSensorConfig::LM35_WARMUP_SAMPLE_COUNT;
-  }
-  _activeAdcProfile = profile;
-}
-
 void TowerSensors::printLm35Diagnostics(
     uint32_t now, float averageRaw, float rawMilliVolts,
     float calibratedMilliVolts, float temperatureCelsius) {
@@ -699,12 +687,9 @@ void TowerSensors::updateBattery(uint32_t now) {
 }
 
 void TowerSensors::startBatteryMeasurement(uint32_t now) {
-  // Khong tron hai phan cua so LM35 nam hai ben lan chuyen attenuation.
-  _lm35SampleCount = 0;
   _batterySampleCount = 0;
   _batteryAttemptCount = 0;
   _batteryLastAdcMilliVolts = 0;
-  setAdcProfile(AdcProfile::BATTERY_11_DB);
   _batteryWarmupSamplesRemaining =
       TowerSensorConfig::BATTERY_WARMUP_SAMPLE_COUNT;
   _batteryStateStartedAt = now;
@@ -752,7 +737,6 @@ void TowerSensors::finishBatteryMeasurement(uint32_t now) {
   digitalWrite(_batteryMeasurePin, LOW);
   _batteryState = BatteryState::IDLE;
   _lastBatteryMeasurementAt = now;
-  setAdcProfile(AdcProfile::LM35_0_DB);
 
   if (_batterySampleCount <
       TowerSensorConfig::BATTERY_MIN_VALID_SAMPLES) {
@@ -813,7 +797,6 @@ void TowerSensors::abortBatteryMeasurement(uint32_t now) {
   _lastBatteryMeasurementAt = now;
   _batterySampleCount = 0;
   _batteryAttemptCount = 0;
-  setAdcProfile(AdcProfile::LM35_0_DB);
   registerBatteryFailure();
   if (TowerSensorConfig::ADC_DIAGNOSTICS_ENABLED) {
     Serial.println("[ADC][BAT] timeout; divider forced OFF");

@@ -221,10 +221,6 @@ private:
     SAMPLING
   };
 
-  enum class AdcProfile : uint8_t {
-    LM35_0_DB,
-    BATTERY_11_DB
-  };
 
   TwoWire *_wire;
   MPU6050 _mpu;
@@ -268,7 +264,6 @@ private:
   bool _temperatureFilterInitialized;
 
   BatteryState _batteryState;
-  AdcProfile _activeAdcProfile;
   uint16_t _batteryRawSamples[BATTERY_WINDOW_SIZE];
   uint16_t _batteryMilliVoltSamples[BATTERY_WINDOW_SIZE];
   uint8_t _batterySampleCount;
@@ -308,7 +303,6 @@ private:
 
   void updateLm35(uint32_t now);
   void processLm35Window(uint32_t now);
-  void setAdcProfile(AdcProfile profile);
   void printLm35Diagnostics(uint32_t now, float averageRaw,
                             float rawMilliVolts,
                             float calibratedMilliVolts,
