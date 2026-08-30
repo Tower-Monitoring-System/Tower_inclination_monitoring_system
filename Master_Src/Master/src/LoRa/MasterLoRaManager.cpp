@@ -87,12 +87,21 @@ bool MasterLoRaManager::peekNewTelemetry(MasterTelemetry &telemetry) const {
 }
 
 bool MasterLoRaManager::markTelemetryConsumed(uint16_t nodeId,
-                                               uint32_t messageId) {
+                                               uint32_t messageId,
+                                               bool duplicate) {
   if (!_newTelemetry || _latestTelemetry.nodeId != nodeId ||
       _latestTelemetry.messageId != messageId) {
     return false;
   }
+
+  // Chi ghi nho de-dup va ACK sau khi lop tren da chap nhan mau
+  // (thong thuong la sau khi enqueue NVS thanh cong). Nhu vay Node khong
+  // nhan ACK cho mot mau ma Master chua giu duoc trong queue.
+  if (!isDuplicate(nodeId, messageId)) {
+    remember(nodeId, messageId);
+  }
   _newTelemetry = false;
+  queueAck(nodeId, messageId, duplicate, millis());
   return true;
 }
 
@@ -173,16 +182,33 @@ void MasterLoRaManager::handleData(const DataPacket &packet, uint32_t now) {
   if (duplicate) {
     Serial.printf("[LORA] ID=%lu DUPLICATE\n",
                   static_cast<unsigned long>(packet.messageId));
-  } else {
-    remember(packet.nodeId, packet.messageId);
-    storeTelemetry(packet);
-    _knownNodeCount = 1U;
-    Serial.printf("[LORA] ID=%lu RX DATA\n",
-                  static_cast<unsigned long>(packet.messageId));
+    setTransientStatus(MasterLoRaStatus::RECEIVING, now + RX_DISPLAY_MS);
+    queueAck(packet.nodeId, packet.messageId, true, now);
+    return;
   }
 
+  // Chi co mot Node hien tai. Neu mau truoc van chua enqueue duoc vao
+  // persistent queue thi khong duoc ghi de va cung khong ACK mau moi.
+  // Node se retry thay vi Master im lang lam mat mau da nhan truoc do.
+  if (_newTelemetry) {
+    if (_latestTelemetry.nodeId == packet.nodeId &&
+        _latestTelemetry.messageId == packet.messageId) {
+      Serial.printf("[LORA] ID=%lu RETRY; dang cho persistent queue\n",
+                    static_cast<unsigned long>(packet.messageId));
+    } else {
+      Serial.printf("[LORA] ID=%lu BUSY; pending ID=%lu, no ACK\n",
+                    static_cast<unsigned long>(packet.messageId),
+                    static_cast<unsigned long>(_latestTelemetry.messageId));
+    }
+    setTransientStatus(MasterLoRaStatus::RECEIVING, now + RX_DISPLAY_MS);
+    return;
+  }
+
+  storeTelemetry(packet);
+  _knownNodeCount = 1U;
+  Serial.printf("[LORA] ID=%lu RX DATA; wait persistent queue before ACK\n",
+                static_cast<unsigned long>(packet.messageId));
   setTransientStatus(MasterLoRaStatus::RECEIVING, now + RX_DISPLAY_MS);
-  queueAck(packet, duplicate, now);
 }
 
 bool MasterLoRaManager::isDuplicate(uint16_t nodeId,
@@ -233,11 +259,11 @@ void MasterLoRaManager::storeTelemetry(const DataPacket &packet) {
   _newTelemetry = true;
 }
 
-void MasterLoRaManager::queueAck(const DataPacket &packet, bool duplicate,
-                                 uint32_t now) {
+void MasterLoRaManager::queueAck(uint16_t nodeId, uint32_t messageId,
+                                 bool duplicate, uint32_t now) {
   memset(&_pendingAck, 0, sizeof(_pendingAck));
-  _pendingAck.nodeId = packet.nodeId;
-  _pendingAck.messageId = packet.messageId;
+  _pendingAck.nodeId = nodeId;
+  _pendingAck.messageId = messageId;
   _pendingAck.status = duplicate ? ACK_DUPLICATE : ACK_ACCEPTED;
   finalize(_pendingAck);
 

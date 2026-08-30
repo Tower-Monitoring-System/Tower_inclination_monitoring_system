@@ -49,7 +49,8 @@ public:
   uint8_t knownNodeCount() const;
   const MasterTelemetry &latestTelemetry() const;
   bool peekNewTelemetry(MasterTelemetry &telemetry) const;
-  bool markTelemetryConsumed(uint16_t nodeId, uint32_t messageId);
+  bool markTelemetryConsumed(uint16_t nodeId, uint32_t messageId,
+                             bool duplicate = false);
   bool takeNewTelemetry(MasterTelemetry &telemetry);
 
 private:
@@ -102,7 +103,7 @@ private:
   bool isDuplicate(uint16_t nodeId, uint32_t messageId) const;
   void remember(uint16_t nodeId, uint32_t messageId);
   void storeTelemetry(const TowerLoRaProtocol::DataPacket &packet);
-  void queueAck(const TowerLoRaProtocol::DataPacket &packet, bool duplicate,
+  void queueAck(uint16_t nodeId, uint32_t messageId, bool duplicate,
                 uint32_t now);
   void sendPendingAck(uint32_t now);
   void monitorAckTransmission(uint32_t now);

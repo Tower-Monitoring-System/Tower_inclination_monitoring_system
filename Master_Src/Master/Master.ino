@@ -6,15 +6,13 @@
 #include "src/LoRa/MasterLoRaManager.h"
 #include "src/OLED/Wifi_Lora_Connect_Effect.h"
 
-const char *ssid = "TINIHI";                 // TINIHI && ESP32_Transmit
-const char *password = "thanhnguyen201077";  // thanhnguyen201077 && 12345678
+const char *ssid = "TINIHI";                 // TINIHI
+const char *password = "thanhnguyen201077";  // thanhnguyen201077
 
-// OLED SH1106 1.3 inch: SDA = 18, SCL = 19, dia chi I2C = 0x3C.
 constexpr int8_t OLED_SDA_PIN = 18;
 constexpr int8_t OLED_SCL_PIN = 19;
 constexpr uint8_t OLED_I2C_ADDRESS = 0x3C;
 
-// AS32-TTL-100 / UART2. RX/TX theo yeu cau giao tiep; AUX/M0/M1 duoc tach
 constexpr int8_t LORA_RX_PIN = 16;
 constexpr int8_t LORA_TX_PIN = 17;
 constexpr int8_t LORA_AUX_PIN = 34;
@@ -29,7 +27,7 @@ constexpr uint32_t ESP32_RESTART_TIMEOUT_MS = 50000UL;
 constexpr uint32_t CONNECTED_EFFECT_DURATION_MS = 1400UL;
 constexpr uint32_t RECONNECT_EFFECT_DURATION_MS = 900UL;
 constexpr uint32_t RESTART_EFFECT_DURATION_MS = 1000UL;
-constexpr uint32_t QUEUE_ENQUEUE_RETRY_MS = 5000UL;
+constexpr uint32_t QUEUE_ENQUEUE_RETRY_MS = 1000UL;
 constexpr uint8_t QUEUE_CLEAR_BUTTON_PIN = 35U;
 constexpr uint32_t QUEUE_CLEAR_DEBOUNCE_MS = 35UL;
 
@@ -52,8 +50,6 @@ enum WifiState : uint8_t {
   WS_CONNECTED
 };
 
-// WiFiEvent duoc goi tu task Wi-Fi, do do cac bien dung chung duoc khai bao
-// volatile. Viec ve OLED chi duoc thuc hien trong loop().
 volatile WifiState currentWifiState = WS_CONNECTING;
 volatile bool wifiOutageActive = true;
 volatile uint32_t wifiOutageStartedAt = 0;
@@ -147,9 +143,6 @@ void WiFiEvent(WiFiEvent_t event) {
 
 void setup() {
   Serial.begin(115200);
-
-  // GPIO35 la input-only va khong co pull-up noi. Button active LOW phai co
-  // dien tro pull-up ngoai tren phan cung.
   pinMode(QUEUE_CLEAR_BUTTON_PIN, INPUT);
   queueClearButtonRawState = digitalRead(QUEUE_CLEAR_BUTTON_PIN);
   queueClearButtonStableState = queueClearButtonRawState;
@@ -198,8 +191,6 @@ void loop() {
   // Lay mot ban sao de trang thai khong thay doi giua luc switch dang xu ly.
   const WifiState state = currentWifiState;
 
-  // Hieu ung reconnect duoc giu trong mot khoang ngan bang state machine,
-  // khong chan Wi-Fi hay cac tac vu khac.
   if (reconnectEffectActive && state == WS_DISCONNECTED) {
     const uint32_t now = millis();
     if (now - reconnectEffectStartedAt < RECONNECT_EFFECT_DURATION_MS) {
@@ -215,7 +206,6 @@ void loop() {
     case WS_CONNECTING:
       reconnectEffectActive = false;
       connectionDisplay.ConnectingEffect(ConnectionType::WIFI);
-      // Du phong truong hop Wi-Fi bi ket o trang thai CONNECTING qua lau.
       handleEsp32Restart();
       break;
 
@@ -224,7 +214,6 @@ void loop() {
       const int16_t wifiRssi = WiFi.RSSI();
       startNtpIfNeeded();
 
-      // Hien thi xac nhan ket noi truoc khi chuyen sang dashboard Master.
       if (millis() - wifiConnectedAt < CONNECTED_EFFECT_DURATION_MS) {
         connectionDisplay.ConnectedEffect(ConnectionType::WIFI, wifiRssi);
       } else {
@@ -355,8 +344,12 @@ void captureNewTelemetry() {
   }
 
   if (consumeTelemetry) {
-    (void)masterLoRa.markTelemetryConsumed(telemetry.nodeId,
-                                           telemetry.messageId);
+    const bool duplicate = result == TelemetryEnqueueResult::DUPLICATE;
+    if (!masterLoRa.markTelemetryConsumed(telemetry.nodeId,
+                                          telemetry.messageId, duplicate)) {
+      Serial.printf("[LORA] ID=%lu WARN: telemetry state changed before ACK\n",
+                    static_cast<unsigned long>(telemetry.messageId));
+    }
     nextQueueEnqueueAttemptAt = 0U;
   }
 }
