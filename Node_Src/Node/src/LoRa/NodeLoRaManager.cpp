@@ -243,6 +243,7 @@ void NodeLoRaManager::prepareSnapshot(const TowerSensorData &sensorData) {
   memset(&_currentPacket, 0, sizeof(_currentPacket));
   _currentPacket.nodeId = _nodeId;
   _currentPacket.messageId = nextMessageId();
+  const char *orientationSource = "NONE";
 
   const bool structuralValid =
       sensorData.structuralTiltValid &&
@@ -263,6 +264,33 @@ void NodeLoRaManager::prepareSnapshot(const TowerSensorData &sensorData) {
                        180.0F);
     _currentPacket.validFlags |=
         FLAG_X_VALID | FLAG_Y_VALID | FLAG_Z_VALID;
+    orientationSource = "STRUCT";
+  } else if (sensorData.orientationValid &&
+             isfinite(sensorData.angleXDegrees) &&
+             isfinite(sensorData.angleYDegrees)) {
+    // Structural Tilt can remain invalid while the tower is vibrating or the
+    // persistence window has not converged. Use the existing fast-filtered
+    // Roll/Pitch as a quality-marked fallback; never use Yaw as Z because the
+    // MPU6050 has no magnetometer. Z keeps the same meaning: combined tilt.
+    constexpr float DEGREES_TO_RADIANS = 0.01745329251994329577F;
+    constexpr float RADIANS_TO_DEGREES = 57.295779513082320876F;
+    const float rollRadians =
+        sensorData.angleXDegrees * DEGREES_TO_RADIANS;
+    const float pitchRadians =
+        sensorData.angleYDegrees * DEGREES_TO_RADIANS;
+    const float projection =
+        fmaxf(-1.0F, fminf(1.0F, cosf(rollRadians) * cosf(pitchRadians)));
+    const float combinedTilt = acosf(projection) * RADIANS_TO_DEGREES;
+
+    _currentPacket.xCentidegrees =
+        quantizeSigned(sensorData.angleXDegrees, 100.0F, -180.0F, 180.0F);
+    _currentPacket.yCentidegrees =
+        quantizeSigned(sensorData.angleYDegrees, 100.0F, -180.0F, 180.0F);
+    _currentPacket.zCentidegrees =
+        quantizeSigned(combinedTilt, 100.0F, 0.0F, 180.0F);
+    _currentPacket.validFlags |= FLAG_X_VALID | FLAG_Y_VALID | FLAG_Z_VALID |
+                                 FLAG_ORIENTATION_FALLBACK;
+    orientationSource = "FAST_FALLBACK";
   }
 
   if (sensorData.temperatureValid &&
@@ -280,6 +308,14 @@ void NodeLoRaManager::prepareSnapshot(const TowerSensorData &sensorData) {
   }
 
   finalize(_currentPacket);
+  Serial.printf(
+      "[LORA] ID=%lu SNAP flags=0x%02X XYZ=%s TEMP=%s BAT=%s\n",
+      static_cast<unsigned long>(_currentPacket.messageId),
+      static_cast<unsigned>(_currentPacket.validFlags), orientationSource,
+      (_currentPacket.validFlags & FLAG_TEMPERATURE_VALID) != 0U ? "OK"
+                                                                 : "MISSING",
+      (_currentPacket.validFlags & FLAG_BATTERY_VALID) != 0U ? "OK"
+                                                             : "MISSING");
   _attemptCount = 0U;
   _parser.reset();
 }

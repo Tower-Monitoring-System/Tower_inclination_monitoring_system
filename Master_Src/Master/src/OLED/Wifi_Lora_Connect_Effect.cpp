@@ -604,7 +604,7 @@ void Wifi_Lora_Connect_Effect::drawDashboardRows(
       snprintf(line, sizeof(line), "SHEET:SUCCESS");
       break;
     case SheetDisplayState::ERROR:
-      snprintf(line, sizeof(line), "SHEET:ERROR");
+      snprintf(line, sizeof(line), "SHEET:FAILED");
       break;
     case SheetDisplayState::READY:
     default:

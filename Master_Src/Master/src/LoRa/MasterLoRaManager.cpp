@@ -78,13 +78,29 @@ const MasterTelemetry &MasterLoRaManager::latestTelemetry() const {
   return _latestTelemetry;
 }
 
-bool MasterLoRaManager::takeNewTelemetry(MasterTelemetry &telemetry) {
+bool MasterLoRaManager::peekNewTelemetry(MasterTelemetry &telemetry) const {
   if (!_newTelemetry) {
     return false;
   }
   telemetry = _latestTelemetry;
+  return true;
+}
+
+bool MasterLoRaManager::markTelemetryConsumed(uint16_t nodeId,
+                                               uint32_t messageId) {
+  if (!_newTelemetry || _latestTelemetry.nodeId != nodeId ||
+      _latestTelemetry.messageId != messageId) {
+    return false;
+  }
   _newTelemetry = false;
   return true;
+}
+
+bool MasterLoRaManager::takeNewTelemetry(MasterTelemetry &telemetry) {
+  if (!peekNewTelemetry(telemetry)) {
+    return false;
+  }
+  return markTelemetryConsumed(telemetry.nodeId, telemetry.messageId);
 }
 
 bool MasterLoRaManager::timeReached(uint32_t now, uint32_t deadline) {
@@ -136,7 +152,8 @@ void MasterLoRaManager::processSerial(uint32_t now) {
 void MasterLoRaManager::handleData(const DataPacket &packet, uint32_t now) {
   constexpr uint8_t KNOWN_FLAGS =
       FLAG_X_VALID | FLAG_Y_VALID | FLAG_Z_VALID |
-      FLAG_TEMPERATURE_VALID | FLAG_BATTERY_VALID;
+      FLAG_TEMPERATURE_VALID | FLAG_BATTERY_VALID |
+      FLAG_ORIENTATION_FALLBACK;
 
   if (packet.nodeId != _expectedNodeId || packet.messageId == 0U) {
     setTransientStatus(MasterLoRaStatus::ERROR, now + ERROR_DISPLAY_MS);

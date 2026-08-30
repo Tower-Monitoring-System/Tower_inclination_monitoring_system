@@ -15,6 +15,9 @@ constexpr uint8_t FLAG_Y_VALID = 1U << 1;
 constexpr uint8_t FLAG_Z_VALID = 1U << 2;
 constexpr uint8_t FLAG_TEMPERATURE_VALID = 1U << 3;
 constexpr uint8_t FLAG_BATTERY_VALID = 1U << 4;
+// X/Y/Z duoc tao tu bo loc goc nhanh khi gia tri structural chua duoc
+// xac nhan. Master van nhan mau, dong thoi co the nhan biet chat luong mau.
+constexpr uint8_t FLAG_ORIENTATION_FALLBACK = 1U << 5;
 
 constexpr uint8_t ACK_ACCEPTED = 0U;
 constexpr uint8_t ACK_DUPLICATE = 1U;

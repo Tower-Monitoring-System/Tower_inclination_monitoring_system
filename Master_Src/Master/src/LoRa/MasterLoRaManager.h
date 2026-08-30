@@ -48,6 +48,8 @@ public:
   bool isReady() const;
   uint8_t knownNodeCount() const;
   const MasterTelemetry &latestTelemetry() const;
+  bool peekNewTelemetry(MasterTelemetry &telemetry) const;
+  bool markTelemetryConsumed(uint16_t nodeId, uint32_t messageId);
   bool takeNewTelemetry(MasterTelemetry &telemetry);
 
 private:
