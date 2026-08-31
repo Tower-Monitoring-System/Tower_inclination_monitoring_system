@@ -63,6 +63,43 @@ void Wifi_Lora_Connect_Effect::ConnectingEffect(ConnectionType type) {
   _frame = (_frame + 1) % 12;
 }
 
+void Wifi_Lora_Connect_Effect::ConfigPortalEffect(ConnectionType type) {
+  if (!_ready) {
+    return;
+  }
+
+  const bool changed = selectScreen(Screen::CONFIG_PORTAL, type);
+  const uint32_t now = millis();
+  if (!frameDue(now, 180, changed)) {
+    return;
+  }
+
+  static const uint8_t waveSequence[] = {1, 2, 3, 4, 3, 2};
+  _display.clearDisplay();
+  drawHeader(type);
+  drawConnectionIcon(type, 64, 33, waveSequence[_frame % 6]);
+
+  // Router/AP badge over the animated Wi-Fi waves.
+  _display.fillRoundRect(54, 27, 21, 11, 2, SH110X_BLACK);
+  _display.drawRoundRect(54, 27, 21, 11, 2, SH110X_WHITE);
+  _display.setTextSize(1);
+  _display.setTextColor(SH110X_WHITE);
+  _display.setCursor(59, 29);
+  _display.print("AP");
+
+  drawCenteredText("WIFI SETUP", 43);
+  drawCenteredText("CONFIG PORTAL", 54);
+
+  const uint8_t pulse = _frame % 4;
+  for (uint8_t index = 0; index < 4; ++index) {
+    if (index <= pulse) {
+      _display.drawPixel(51 + (index * 9), 62, SH110X_WHITE);
+    }
+  }
+  _display.display();
+  _frame = (_frame + 1) % 12;
+}
+
 void Wifi_Lora_Connect_Effect::ConnectedEffect(ConnectionType type,
                                                int16_t signalStrength) {
   if (!_ready) {

@@ -451,23 +451,86 @@ function findDedupRow_(sheet, key) {
 }
 
 function nextTelemetryTargetRow_(sheet, dedupSheet) {
-  var targetRow = Math.max(2, sheet.getLastRow() + 1);
-  var lastDedupRow = dedupSheet.getLastRow();
-  if (lastDedupRow < 2) {
-    return targetRow;
+  // Telemetry luon ghi du 6 cot A:F. Tim dong trong thuc su dau tien tu dong 2
+  // thay vi dua vao TargetRow cu trong __TELEMETRY_DEDUP.
+  var lastSheetRow = Math.max(1, sheet.getLastRow());
+  if (lastSheetRow >= 2) {
+    // Doc cot Date truoc de giam du lieu phai lay tu Sheets. Chi khi A trong
+    // moi doc A:F de xac nhan ca dong telemetry thuc su trong.
+    var dateValues = sheet.getRange(2, 1, lastSheetRow - 1, 1).getValues();
+    for (var index = 0; index < dateValues.length; index += 1) {
+      if (dateValues[index][0] !== "" && dateValues[index][0] !== null) {
+        continue;
+      }
+
+      var rowNumber = index + 2;
+      var rowValues = sheet
+        .getRange(rowNumber, 1, 1, REQUIRED_HEADERS.length)
+        .getValues()[0];
+      if (!isBlankTelemetryRow_(rowValues)) {
+        continue;
+      }
+
+      if (prepareBlankTelemetryRowForReuse_(dedupSheet, rowNumber)) {
+        return rowNumber;
+      }
+    }
   }
 
-  // Moi reservation duoc append duoi ScriptLock nen TargetRow tang dan.
-  // Chi doc reservation cuoi, khong quet lai toan bo dedup sheet moi lan.
-  var lastReservedRow = normalizeInteger_(
-    dedupSheet.getRange(lastDedupRow, 3).getValue(),
-    2,
-    sheet.getMaxRows()
-  );
-  if (lastReservedRow === null) {
-    throw new Error("Dedup target row is invalid.");
+  // Khong co lo trong trong vung hien tai: dung dong ngay sau du lieu.
+  // Neu dong nay dang duoc mot execution PENDING giu, bo qua cho den dong
+  // dau tien khong con reservation dang hoat dong.
+  var targetRow = Math.max(2, lastSheetRow + 1);
+  while (!prepareBlankTelemetryRowForReuse_(dedupSheet, targetRow)) {
+    targetRow += 1;
   }
-  return Math.max(targetRow, lastReservedRow + 1);
+  return targetRow;
+}
+
+function prepareBlankTelemetryRowForReuse_(dedupSheet, targetRow) {
+  var lastDedupRow = dedupSheet.getLastRow();
+  if (lastDedupRow < 2) {
+    return true;
+  }
+
+  var matches = dedupSheet
+    .getRange(2, 3, lastDedupRow - 1, 1)
+    .createTextFinder(String(targetRow))
+    .matchEntireCell(true)
+    .findAll();
+
+  if (!matches || matches.length === 0) {
+    return true;
+  }
+
+  var staleRows = [];
+  for (var index = 0; index < matches.length; index += 1) {
+    var dedupRow = matches[index].getRow();
+    var status = String(dedupSheet.getRange(dedupRow, 2).getValue()).trim();
+
+    // PENDING co the la mot request da reserve dong nhung chua kip commit.
+    // Khong duoc ghi de len dong nay; retry cung Message ID se tu khoi phuc.
+    if (status === "PENDING") {
+      return false;
+    }
+
+    // COMMITTED + telemetry row dang trong chi co the xay ra khi du lieu A:F
+    // da bi xoa thu cong. Reservation nay da stale va phai duoc giai phong de
+    // dong trong co the duoc tai su dung tu tren xuong duoi.
+    if (status === "COMMITTED") {
+      staleRows.push(dedupRow);
+      continue;
+    }
+
+    // Trang thai khac cho thay dedup metadata bi hong; dung ghi de len de
+    // tranh lam mat kha nang truy vet.
+    throw new Error("Dedup state is invalid for target row " + targetRow + ".");
+  }
+
+  staleRows.forEach(function (dedupRow) {
+    dedupSheet.getRange(dedupRow, 1, 1, DEDUP_HEADERS.length).clearContent();
+  });
+  return true;
 }
 
 function ensureSheetRowExists_(sheet, rowNumber) {

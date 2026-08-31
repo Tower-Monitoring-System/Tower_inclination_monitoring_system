@@ -1,13 +1,11 @@
 #include <WiFi.h>
 #include <time.h>
 
+#include "src/ESP32WiFiPortal/ESP32WiFiPortal.h"
 #include "src/GoogleSheet/GoogleSheetConfig.h"
 #include "src/GoogleSheet/GoogleSheetUploader.h"
 #include "src/LoRa/MasterLoRaManager.h"
 #include "src/OLED/Wifi_Lora_Connect_Effect.h"
-
-const char *ssid = "TINIHI";                 // TINIHI
-const char *password = "thanhnguyen201077";  // thanhnguyen201077
 
 constexpr int8_t OLED_SDA_PIN = 18;
 constexpr int8_t OLED_SCL_PIN = 19;
@@ -22,14 +20,17 @@ constexpr uint16_t EXPECTED_LORA_NODE_ID = 1U;
 static_assert(EXPECTED_LORA_NODE_ID == GoogleSheetConfig::NODE_ID,
               "LoRa Node ID va Google Sheet Node ID phai trung nhau");
 
-constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 20000UL;
-constexpr uint32_t ESP32_RESTART_TIMEOUT_MS = 50000UL;
 constexpr uint32_t CONNECTED_EFFECT_DURATION_MS = 1400UL;
-constexpr uint32_t RECONNECT_EFFECT_DURATION_MS = 900UL;
-constexpr uint32_t RESTART_EFFECT_DURATION_MS = 1000UL;
+constexpr char WIFI_PORTAL_SSID[] = "Tower-Master-Setup";
+constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000UL;
+constexpr uint8_t WIFI_CONNECTION_RETRY_COUNT = 2U;
+constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 5000UL;
+constexpr uint32_t WIFI_MAX_RETRY_INTERVAL_MS = 60000UL;
+constexpr uint32_t ON_DEMAND_PORTAL_TIMEOUT_MS = 5UL * 60UL * 1000UL;
 constexpr uint32_t QUEUE_ENQUEUE_RETRY_MS = 1000UL;
 constexpr uint8_t QUEUE_CLEAR_BUTTON_PIN = 35U;
 constexpr uint32_t QUEUE_CLEAR_DEBOUNCE_MS = 35UL;
+constexpr uint32_t WIFI_PORTAL_BUTTON_HOLD_MS = 3000UL;
 
 constexpr long GMT_OFFSET_SECONDS = 7L * 60L * 60L;
 constexpr int DAYLIGHT_OFFSET_SECONDS = 0;
@@ -38,34 +39,25 @@ const char *NTP_SERVER_1 = "pool.ntp.org";
 const char *NTP_SERVER_2 = "time.nist.gov";
 
 Wifi_Lora_Connect_Effect connectionDisplay;
+ESP32WiFiPortal wifiPortal;
 HardwareSerial loraSerial(2);
 MasterLoRaManager masterLoRa(loraSerial, LORA_RX_PIN, LORA_TX_PIN,
                             LORA_AUX_PIN, LORA_M0_PIN, LORA_M1_PIN,
                             EXPECTED_LORA_NODE_ID);
 GoogleSheetUploader googleSheetUploader(GoogleSheetConfig::UPLOADER);
 
-enum WifiState : uint8_t {
-  WS_DISCONNECTED,
-  WS_CONNECTING,
-  WS_CONNECTED
-};
-
-volatile WifiState currentWifiState = WS_CONNECTING;
-volatile bool wifiOutageActive = true;
-volatile uint32_t wifiOutageStartedAt = 0;
-volatile uint32_t lastReconnectAttemptAt = 0;
-volatile uint32_t wifiConnectedAt = 0;
-
-bool reconnectEffectActive = false;
-uint32_t reconnectEffectStartedAt = 0;
-bool restartPending = false;
-uint32_t restartEffectStartedAt = 0;
+bool wifiConnectedCallbackPending = false;
+bool wifiWasConnected = false;
+bool wifiEverConnected = false;
+uint32_t wifiConnectedAt = 0;
 bool ntpStarted = false;
 uint32_t nextQueueEnqueueAttemptAt = 0;
 bool queueClearButtonRawState = HIGH;
 bool queueClearButtonStableState = HIGH;
 bool queueClearButtonPressArmed = false;
+bool queueClearButtonLongPressHandled = false;
 uint32_t queueClearButtonLastTransitionAt = 0;
+uint32_t queueClearButtonPressedAt = 0;
 
 // Trang thai dashboard duoc cap nhat tu LoRa manager va Google Sheet uploader.
 MasterDashboardState masterDashboardState = {
@@ -78,74 +70,28 @@ MasterDashboardState masterDashboardState = {
     false,
 };
 
-void handleWifiReconnect();
-void handleEsp32Restart();
+bool startWifiConfigPortal(uint32_t timeoutMs);
+void updateWifiStateAndDisplay(uint32_t now);
 void startNtpIfNeeded();
 bool isNtpTimeSynchronized();
 void captureNewTelemetry();
 void logInvalidTelemetry(const MasterTelemetry &telemetry);
 void handleQueueClearButton(uint32_t now);
+void clearTelemetryQueue();
 void syncLoRaDashboardState();
 void syncGoogleSheetDashboardState();
 LoraDisplayState toDisplayState(MasterLoRaStatus status);
 SheetDisplayState toDisplayState(GoogleSheetUploadState status);
-
-void WiFiEvent(WiFiEvent_t event) {
-  const uint32_t now = millis();
-
-  switch (event) {
-    case ARDUINO_EVENT_WIFI_STA_START:
-      Serial.println("\n------- BAT DAU KET NOI WIFI -------");
-      Serial.print(">> Dang ket noi den: ");
-      Serial.println(ssid);
-      currentWifiState = WS_CONNECTING;
-      break;
-
-    case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-      Serial.println("[CONNECTING] Da ket noi den Access Point. Dang cho IP...");
-      currentWifiState = WS_CONNECTING;
-      break;
-
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      Serial.println("[OK] DA NHAN DUOC IP! Internet OK.");
-      Serial.print("[CONFIRM] IP Address: ");
-      Serial.println(WiFi.localIP());
-      Serial.print("[CONFIRM] Dia chi MAC: ");
-      Serial.println(WiFi.macAddress());
-      Serial.print("[CONFIRM] Cuong do tin hieu (RSSI): ");
-      Serial.print(WiFi.RSSI());
-      Serial.println(" dBm");
-
-      wifiOutageActive = false;
-      wifiConnectedAt = now;
-      currentWifiState = WS_CONNECTED;
-      break;
-
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      Serial.println("[FAIL] MAT KET NOI! Dang cho thu ket noi lai...");
-
-      // Chi bat dau lai timeout khi day la dau mot dot mat ket noi moi.
-      // Cac lan retry sau do khong duoc phep lam moi timeout restart 50 giay.
-      if (!wifiOutageActive) {
-        wifiOutageActive = true;
-        wifiOutageStartedAt = now;
-        lastReconnectAttemptAt = now;
-        Serial.println("[FAIL] Bat dau dem gio restart...");
-      }
-
-      currentWifiState = WS_DISCONNECTED;
-      break;
-
-    default:
-      break;
-  }
-}
 
 void setup() {
   Serial.begin(115200);
   pinMode(QUEUE_CLEAR_BUTTON_PIN, INPUT);
   queueClearButtonRawState = digitalRead(QUEUE_CLEAR_BUTTON_PIN);
   queueClearButtonStableState = queueClearButtonRawState;
+  if (queueClearButtonStableState == LOW) {
+    queueClearButtonPressArmed = true;
+    queueClearButtonPressedAt = millis();
+  }
 
   if (!connectionDisplay.begin(OLED_SDA_PIN, OLED_SCL_PIN,
                                OLED_I2C_ADDRESS)) {
@@ -160,125 +106,117 @@ void setup() {
   syncLoRaDashboardState();
   syncGoogleSheetDashboardState();
 
-  const uint32_t now = millis();
-  wifiOutageActive = true;
-  wifiOutageStartedAt = now;
-  lastReconnectAttemptAt = now;
-  currentWifiState = WS_CONNECTING;
+  wifiPortal.setConnectTimeout(WIFI_CONNECT_TIMEOUT_MS);
+  if (!wifiPortal.setConnectionRetryPolicy(
+          WIFI_CONNECTION_RETRY_COUNT, WIFI_RETRY_INTERVAL_MS,
+          WIFI_MAX_RETRY_INTERVAL_MS)) {
+    Serial.print("[WIFI] Cau hinh retry that bai: ");
+    Serial.println(wifiPortal.lastError());
+  }
+  wifiPortal.onConnected([]() { wifiConnectedCallbackPending = true; });
 
-  WiFi.onEvent(WiFiEvent);
-  WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
-  WiFi.begin(ssid, password);
+  const bool hasSavedWifi = wifiPortal.hasSavedCredentials();
+  wifiPortal.setAutoReconnect(true);
+  if (hasSavedWifi) {
+    Serial.println(
+        "[WIFI] Da co credentials trong NVS; cho ket noi non-blocking...");
+  } else {
+    Serial.println("[WIFI] Chua co credentials trong NVS.");
+    startWifiConfigPortal(0U);
+  }
 }
 
 void loop() {
-  // Dat receive path truoc moi nhanh Wi-Fi/OLED de Master van xu ly DATA va
-  // ACK trong luc reconnect, chay effect hay cho restart.
+  // Luon phuc vu LoRa truoc, ke ca khi mat Wi-Fi hoac Config Portal dang mo.
   const uint32_t loopNow = millis();
   masterLoRa.update(loopNow);
   captureNewTelemetry();
   handleQueueClearButton(loopNow);
+
+  // ESP32WiFiPortal la noi duy nhat quan ly WiFiEvent, ket noi va reconnect.
+  wifiPortal.process();
+
   syncLoRaDashboardState();
   syncGoogleSheetDashboardState();
-
-  if (restartPending) {
-    handleEsp32Restart();
-    yield();
-    return;
-  }
-
-  // Lay mot ban sao de trang thai khong thay doi giua luc switch dang xu ly.
-  const WifiState state = currentWifiState;
-
-  if (reconnectEffectActive && state == WS_DISCONNECTED) {
-    const uint32_t now = millis();
-    if (now - reconnectEffectStartedAt < RECONNECT_EFFECT_DURATION_MS) {
-      connectionDisplay.Disconnect(ConnectionType::WIFI);
-      handleEsp32Restart();
-      yield();
-      return;
-    }
-    reconnectEffectActive = false;
-  }
-
-  switch (state) {
-    case WS_CONNECTING:
-      reconnectEffectActive = false;
-      connectionDisplay.ConnectingEffect(ConnectionType::WIFI);
-      handleEsp32Restart();
-      break;
-
-    case WS_CONNECTED: {
-      reconnectEffectActive = false;
-      const int16_t wifiRssi = WiFi.RSSI();
-      startNtpIfNeeded();
-
-      if (millis() - wifiConnectedAt < CONNECTED_EFFECT_DURATION_MS) {
-        connectionDisplay.ConnectedEffect(ConnectionType::WIFI, wifiRssi);
-      } else {
-        masterDashboardState.wifiRssi = wifiRssi;
-        masterDashboardState.timeSynchronized = isNtpTimeSynchronized();
-        connectionDisplay.MasterDashboard(masterDashboardState);
-      }
-      break;
-    }
-
-    case WS_DISCONNECTED:
-      connectionDisplay.LostConnectEffect(ConnectionType::WIFI);
-      handleWifiReconnect();
-      handleEsp32Restart();
-      break;
-  }
+  updateWifiStateAndDisplay(millis());
 
   // yield() chi nhuong quyen xu ly, khong tao thoi gian cho nhu delay().
   yield();
 }
 
-void handleWifiReconnect() {
-  if (!wifiOutageActive) {
-    return;
+bool startWifiConfigPortal(uint32_t timeoutMs) {
+  if (wifiPortal.isPortalActive()) {
+    return true;
   }
 
-  const uint32_t now = millis();
-  if (now - lastReconnectAttemptAt < WIFI_RECONNECT_INTERVAL_MS) {
-    return;
+  if (!wifiPortal.startConfigPortalAsync(WIFI_PORTAL_SSID, nullptr,
+                                          timeoutMs)) {
+    Serial.print("[WIFI] Khong the mo Config Portal: ");
+    Serial.println(wifiPortal.lastError());
+    return false;
   }
 
-  Serial.println(">> [TIMEOUT 20s] Reset WiFi va ket noi lai...");
-  connectionDisplay.Disconnect(ConnectionType::WIFI);
-
-  lastReconnectAttemptAt = now;
-  reconnectEffectStartedAt = now;
-  reconnectEffectActive = true;
-  WiFi.disconnect();
-  WiFi.begin(ssid, password);
+  Serial.print("[WIFI] Config Portal san sang: ");
+  Serial.print(wifiPortal.portalSSID());
+  Serial.print(" tai http://");
+  Serial.println(wifiPortal.portalIP());
+  return true;
 }
 
-void handleEsp32Restart() {
-  const uint32_t now = millis();
+void updateWifiStateAndDisplay(uint32_t now) {
+  const bool connected = wifiPortal.isConnected();
+  const bool callbackReportedConnection = wifiConnectedCallbackPending;
+  wifiConnectedCallbackPending = false;
 
-  if (restartPending) {
-    connectionDisplay.RestartESP32(ConnectionType::WIFI);
-    if (now - restartEffectStartedAt >= RESTART_EFFECT_DURATION_MS) {
-      Serial.flush();
-      ESP.restart();
+  if (connected && (!wifiWasConnected || callbackReportedConnection)) {
+    wifiEverConnected = true;
+    wifiConnectedAt = now;
+    Serial.println("[WIFI] Da ket noi va nhan IP.");
+    Serial.print("[WIFI] IP: ");
+    Serial.println(WiFi.localIP());
+    Serial.print("[WIFI] MAC: ");
+    Serial.println(WiFi.macAddress());
+    Serial.print("[WIFI] RSSI: ");
+    Serial.print(WiFi.RSSI());
+    Serial.println(" dBm");
+  } else if (!connected && wifiWasConnected) {
+    Serial.println("[WIFI] Mat ket noi; portal se tu reconnect non-blocking.");
+  }
+  wifiWasConnected = connected;
+
+  if (connected) {
+    startNtpIfNeeded();
+  }
+
+  // Portal van active trong luc thu candidate; candidate phai uu tien hieu
+  // ung Connecting, con luc cho user thi hien thi AP Config Portal rieng.
+  if (wifiPortal.isPortalActive()) {
+    if (wifiPortal.isPortalConnectionAttemptActive()) {
+      connectionDisplay.ConnectingEffect(ConnectionType::WIFI);
+    } else {
+      connectionDisplay.ConfigPortalEffect(ConnectionType::WIFI);
     }
     return;
   }
 
-  if (!wifiOutageActive) {
+  if (!connected) {
+    if (wifiEverConnected) {
+      connectionDisplay.LostConnectEffect(ConnectionType::WIFI);
+    } else {
+      connectionDisplay.ConnectingEffect(ConnectionType::WIFI);
+    }
     return;
   }
 
-  if (now - wifiOutageStartedAt < ESP32_RESTART_TIMEOUT_MS) {
+  const int16_t wifiRssi = WiFi.RSSI();
+  if (now - wifiConnectedAt < CONNECTED_EFFECT_DURATION_MS) {
+    connectionDisplay.ConnectedEffect(ConnectionType::WIFI, wifiRssi);
     return;
   }
 
-  Serial.println(">> [TIMEOUT 50s] KHONG THE KET NOI. KHOI DONG LAI ESP32...");
-  restartPending = true;
-  restartEffectStartedAt = now;
-  connectionDisplay.RestartESP32(ConnectionType::WIFI);
+  masterDashboardState.wifiRssi = wifiRssi;
+  masterDashboardState.timeSynchronized = isNtpTimeSynchronized();
+  connectionDisplay.MasterDashboard(masterDashboardState);
 }
 
 void startNtpIfNeeded() {
@@ -387,22 +325,34 @@ void handleQueueClearButton(uint32_t now) {
     queueClearButtonLastTransitionAt = now;
   }
 
-  if (rawState == queueClearButtonStableState ||
-      now - queueClearButtonLastTransitionAt < QUEUE_CLEAR_DEBOUNCE_MS) {
-    return;
+  if (rawState != queueClearButtonStableState &&
+      now - queueClearButtonLastTransitionAt >= QUEUE_CLEAR_DEBOUNCE_MS) {
+    queueClearButtonStableState = rawState;
+    if (queueClearButtonStableState == LOW) {
+      queueClearButtonPressArmed = true;
+      queueClearButtonLongPressHandled = false;
+      queueClearButtonPressedAt = now;
+    } else {
+      const bool shouldClearQueue =
+          queueClearButtonPressArmed && !queueClearButtonLongPressHandled;
+      queueClearButtonPressArmed = false;
+      queueClearButtonLongPressHandled = false;
+      if (shouldClearQueue) {
+        clearTelemetryQueue();
+      }
+    }
   }
 
-  queueClearButtonStableState = rawState;
-  if (queueClearButtonStableState == LOW) {
-    queueClearButtonPressArmed = true;
-    return;
+  if (queueClearButtonStableState == LOW && queueClearButtonPressArmed &&
+      !queueClearButtonLongPressHandled &&
+      now - queueClearButtonPressedAt >= WIFI_PORTAL_BUTTON_HOLD_MS) {
+    queueClearButtonLongPressHandled = true;
+    Serial.println("[BUTTON] Giu 3 giay -> mo Config Portal.");
+    startWifiConfigPortal(ON_DEMAND_PORTAL_TIMEOUT_MS);
   }
+}
 
-  if (!queueClearButtonPressArmed) {
-    return;
-  }
-  queueClearButtonPressArmed = false;
-
+void clearTelemetryQueue() {
   if (googleSheetUploader.clearQueue()) {
     nextQueueEnqueueAttemptAt = 0U;
     Serial.println("[QUEUE] CLEAR -> pending=0");

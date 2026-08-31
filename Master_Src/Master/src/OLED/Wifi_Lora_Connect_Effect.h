@@ -55,6 +55,7 @@ public:
   bool isReady() const;
 
   void ConnectingEffect(ConnectionType type = ConnectionType::WIFI);
+  void ConfigPortalEffect(ConnectionType type = ConnectionType::WIFI);
   void ConnectedEffect(ConnectionType type = ConnectionType::WIFI,
                        int16_t signalStrength = 0);
   void LostConnectEffect(ConnectionType type = ConnectionType::WIFI);
@@ -71,6 +72,7 @@ private:
   enum class Screen : uint8_t {
     NONE,
     CONNECTING,
+    CONFIG_PORTAL,
     CONNECTED,
     DASHBOARD,
     LOST,
