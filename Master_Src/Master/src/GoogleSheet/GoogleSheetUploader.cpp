@@ -34,6 +34,7 @@ GoogleSheetUploader::GoogleSheetUploader(
       _mutex(nullptr),
       _taskHandle(nullptr),
       _records{},
+      _snapshot{},
       _nextSequence(1U),
       _bootId(0U),
       _queueGeneration(1U),
@@ -141,7 +142,7 @@ TelemetryEnqueueResult GoogleSheetUploader::enqueue(
 
   _records[slot] = record;
   ++_nextSequence;
-  ++_pendingCount;
+  _pendingCount = static_cast<uint8_t>(_pendingCount + 1U);
   unlock();
   notifyTask();
   return TelemetryEnqueueResult::QUEUED;
@@ -194,10 +195,9 @@ void GoogleSheetUploader::taskLoop() {
       retryDelayMs = _config.initialRetryMs;
     }
 
-    StoredTelemetryRecord record{};
-    uint8_t slot = 0U;
-    uint32_t recordGeneration = 0U;
-    if (!peekFront(record, slot, recordGeneration)) {
+    uint8_t snapshotCount = 0U;
+    uint32_t snapshotGeneration = 0U;
+    if (!peekSnapshot(snapshotCount, snapshotGeneration)) {
       _state = _configured ? GoogleSheetUploadState::READY
                            : GoogleSheetUploadState::CONFIG_ERROR;
       waitForTaskSignal(IDLE_TASK_DELAY_MS);
@@ -216,56 +216,67 @@ void GoogleSheetUploader::taskLoop() {
       continue;
     }
 
-    if (record.sampleEpoch < MINIMUM_VALID_EPOCH) {
-      const time_t synchronizedTime = time(nullptr);
-      if (static_cast<int64_t>(synchronizedTime) < MINIMUM_VALID_EPOCH) {
+    const bool isBatch = snapshotCount >= MINIMUM_BATCH_RECORDS;
+    const uint8_t operationCount = isBatch ? snapshotCount : 1U;
+    const PrepareSnapshotResult timestampResult =
+        prepareSnapshotTimestamps(operationCount, snapshotGeneration);
+    if (timestampResult != PrepareSnapshotResult::READY) {
+      if (timestampResult == PrepareSnapshotResult::WAITING_FOR_TIME) {
         _state = GoogleSheetUploadState::WAITING;
         waitForTaskSignal(WAITING_TASK_DELAY_MS);
         continue;
       }
-
-      int64_t recoveredSampleTime = static_cast<int64_t>(synchronizedTime);
-      if (record.bootId == _bootId) {
-        const uint32_t ageSeconds =
-            (millis() - record.capturedAtMillis) / 1000UL;
-        if (ageSeconds <= MAXIMUM_TIMESTAMP_RECOVERY_AGE_SECONDS &&
-            recoveredSampleTime - static_cast<int64_t>(ageSeconds) >=
-                MINIMUM_VALID_EPOCH) {
-          recoveredSampleTime -= static_cast<int64_t>(ageSeconds);
-        }
-      }
-
-      if (!setFrontTimestamp(slot, record.sequence, recoveredSampleTime,
-                             recordGeneration)) {
-        if (queueGeneration() != recordGeneration) {
-          retryDelayMs = _config.initialRetryMs;
-          continue;
-        }
-        _state = GoogleSheetUploadState::FAILED;
-        waitForTaskSignal(retryDelayMs);
-        retryDelayMs =
-            retryDelayMs >= _config.maximumRetryMs / 2U
-                ? _config.maximumRetryMs
-                : retryDelayMs * 2U;
+      if (timestampResult == PrepareSnapshotResult::STALE) {
+        retryDelayMs = _config.initialRetryMs;
         continue;
       }
-      record.sampleEpoch = recoveredSampleTime;
-      Serial.printf("[GSHEET] ID=%lu khoi phuc timestamp tu NTP\n",
-                    static_cast<unsigned long>(record.messageId));
+
+      _state = GoogleSheetUploadState::FAILED;
+      waitForTaskSignal(retryDelayMs);
+      retryDelayMs = retryDelayMs >= _config.maximumRetryMs / 2U
+                         ? _config.maximumRetryMs
+                         : retryDelayMs * 2U;
+      continue;
     }
 
     _state = GoogleSheetUploadState::SENDING;
-    Serial.printf("[GSHEET] ID=%lu Sending, pending=%u\n",
-                  static_cast<unsigned long>(record.messageId),
-                  static_cast<unsigned>(_pendingCount));
+    const uint32_t firstMessageId = _snapshot[0].messageId;
+    if (isBatch) {
+      Serial.printf("[GSHEET] BATCH firstID=%lu count=%u Sending, pending=%u\n",
+                    static_cast<unsigned long>(firstMessageId),
+                    static_cast<unsigned>(operationCount),
+                    static_cast<unsigned>(_pendingCount));
+    } else {
+      Serial.printf("[GSHEET] ID=%lu Sending, pending=%u\n",
+                    static_cast<unsigned long>(firstMessageId),
+                    static_cast<unsigned>(_pendingCount));
+    }
 
-    if (uploadRecord(record, recordGeneration)) {
-      const RemoveFrontResult removeResult =
-          removeFront(slot, record.sequence, record.messageId,
-                      recordGeneration);
-      if (removeResult == RemoveFrontResult::REMOVED) {
-        Serial.printf("[GSHEET] ID=%lu SENT -> removeFront\n",
-                      static_cast<unsigned long>(record.messageId));
+    const bool uploadSucceeded =
+        isBatch ? uploadBatch(_snapshot, operationCount, snapshotGeneration)
+                : uploadRecord(_snapshot[0].record, snapshotGeneration);
+    if (uploadSucceeded) {
+      uint8_t removedCount = 0U;
+      RemoveFrontResult removeResult = RemoveFrontResult::REMOVED;
+      while (removedCount < operationCount) {
+        const QueueSnapshotEntry &entry = _snapshot[removedCount];
+        removeResult = removeFront(entry.slot, entry.sequence,
+                                   entry.messageId, snapshotGeneration);
+        if (removeResult != RemoveFrontResult::REMOVED) {
+          break;
+        }
+        ++removedCount;
+      }
+
+      if (removedCount == operationCount) {
+        if (isBatch) {
+          Serial.printf("[GSHEET] BATCH firstID=%lu count=%u SENT -> removed\n",
+                        static_cast<unsigned long>(firstMessageId),
+                        static_cast<unsigned>(operationCount));
+        } else {
+          Serial.printf("[GSHEET] ID=%lu SENT -> removeFront\n",
+                        static_cast<unsigned long>(firstMessageId));
+        }
         Serial.printf("[GSHEET] pending=%u\n",
                       static_cast<unsigned>(_pendingCount));
         _state = GoogleSheetUploadState::SUCCESS;
@@ -276,24 +287,27 @@ void GoogleSheetUploader::taskLoop() {
         continue;
       }
       if (removeResult == RemoveFrontResult::STALE) {
-        Serial.printf("[GSHEET] ID=%lu queue da CLEAR sau khi gui\n",
-                      static_cast<unsigned long>(record.messageId));
+        Serial.printf("[GSHEET] firstID=%lu queue da CLEAR sau khi gui\n",
+                      static_cast<unsigned long>(firstMessageId));
         retryDelayMs = _config.initialRetryMs;
         continue;
       }
-      Serial.printf("[GSHEET] ID=%lu NVS dequeue failed; se retry cung ID\n",
-                    static_cast<unsigned long>(record.messageId));
-    } else if (queueGeneration() != recordGeneration) {
+      Serial.printf(
+          "[GSHEET] firstID=%lu NVS dequeue failed after %u/%u; retry phan con lai\n",
+          static_cast<unsigned long>(firstMessageId),
+          static_cast<unsigned>(removedCount),
+          static_cast<unsigned>(operationCount));
+    } else if (queueGeneration() != snapshotGeneration) {
       retryDelayMs = _config.initialRetryMs;
       continue;
     }
 
     _state = GoogleSheetUploadState::FAILED;
-    Serial.printf("[GSHEET] ID=%lu Retry sau %lu ms\n",
-                  static_cast<unsigned long>(record.messageId),
+    Serial.printf("[GSHEET] firstID=%lu Retry sau %lu ms\n",
+                  static_cast<unsigned long>(firstMessageId),
                   static_cast<unsigned long>(retryDelayMs));
     waitForTaskSignal(retryDelayMs);
-    if (queueGeneration() == recordGeneration) {
+    if (queueGeneration() == snapshotGeneration) {
       retryDelayMs = retryDelayMs >= _config.maximumRetryMs / 2U
                          ? _config.maximumRetryMs
                          : retryDelayMs * 2U;
@@ -332,7 +346,7 @@ bool GoogleSheetUploader::loadQueue() {
     }
 
     _records[slot] = record;
-    ++_pendingCount;
+    _pendingCount = static_cast<uint8_t>(_pendingCount + 1U);
     if (record.sequence >= _nextSequence) {
       _nextSequence = record.sequence + 1U;
     }
@@ -414,22 +428,39 @@ bool GoogleSheetUploader::containsMessageLocked(uint16_t nodeId,
   return false;
 }
 
-bool GoogleSheetUploader::peekFront(StoredTelemetryRecord &record,
-                                    uint8_t &slot,
-                                    uint32_t &generation) {
+bool GoogleSheetUploader::peekSnapshot(uint8_t &recordCount,
+                                       uint32_t &generation) {
+  recordCount = 0U;
   if (!lock()) {
     return false;
   }
-  const int frontSlot = findFrontSlotLocked();
-  if (frontSlot < 0) {
-    unlock();
-    return false;
-  }
-  slot = static_cast<uint8_t>(frontSlot);
-  record = _records[slot];
+
   generation = _queueGeneration;
+  for (uint8_t slot = 0U; slot < MAX_QUEUE_RECORDS; ++slot) {
+    if (!isRecordValid(_records[slot])) {
+      continue;
+    }
+    QueueSnapshotEntry &entry = _snapshot[recordCount++];
+    entry.record = _records[slot];
+    entry.sequence = _records[slot].sequence;
+    entry.messageId = _records[slot].messageId;
+    entry.slot = slot;
+  }
   unlock();
-  return true;
+
+  // Sorting happens after unlock; the copied snapshot is immutable while TLS
+  // is in progress and generation protects it from clearQueue().
+  for (uint8_t index = 1U; index < recordCount; ++index) {
+    const QueueSnapshotEntry current = _snapshot[index];
+    uint8_t insertion = index;
+    while (insertion > 0U &&
+           _snapshot[insertion - 1U].sequence > current.sequence) {
+      _snapshot[insertion] = _snapshot[insertion - 1U];
+      --insertion;
+    }
+    _snapshot[insertion] = current;
+  }
+  return recordCount > 0U;
 }
 
 GoogleSheetUploader::RemoveFrontResult GoogleSheetUploader::removeFront(
@@ -456,24 +487,27 @@ GoogleSheetUploader::RemoveFrontResult GoogleSheetUploader::removeFront(
 
   memset(&_records[slot], 0, sizeof(_records[slot]));
   if (_pendingCount > 0U) {
-    --_pendingCount;
+    _pendingCount = static_cast<uint8_t>(_pendingCount - 1U);
   }
   unlock();
   return RemoveFrontResult::REMOVED;
 }
 
-bool GoogleSheetUploader::setFrontTimestamp(uint8_t slot, uint64_t sequence,
-                                            int64_t sampleEpoch,
-                                            uint32_t generation) {
+GoogleSheetUploader::TimestampUpdateResult
+GoogleSheetUploader::setRecordTimestamp(uint8_t slot, uint64_t sequence,
+                                        uint32_t messageId,
+                                        int64_t sampleEpoch,
+                                        uint32_t generation) {
   if (!lock()) {
-    return false;
+    return TimestampUpdateResult::STORAGE_ERROR;
   }
 
-  const int currentFront = findFrontSlotLocked();
-  if (_queueGeneration != generation || currentFront != slot ||
-      _records[slot].sequence != sequence) {
+  if (_queueGeneration != generation || slot >= MAX_QUEUE_RECORDS ||
+      _records[slot].magic != RECORD_MAGIC ||
+      _records[slot].sequence != sequence ||
+      _records[slot].messageId != messageId) {
     unlock();
-    return false;
+    return TimestampUpdateResult::STALE;
   }
 
   StoredTelemetryRecord updated = _records[slot];
@@ -481,11 +515,62 @@ bool GoogleSheetUploader::setFrontTimestamp(uint8_t slot, uint64_t sequence,
   updated.checksum = calculateChecksum(updated);
   if (!persistSlotLocked(slot, updated)) {
     unlock();
-    return false;
+    return TimestampUpdateResult::STORAGE_ERROR;
   }
   _records[slot] = updated;
   unlock();
-  return true;
+  return TimestampUpdateResult::UPDATED;
+}
+
+GoogleSheetUploader::PrepareSnapshotResult
+GoogleSheetUploader::prepareSnapshotTimestamps(uint8_t recordCount,
+                                               uint32_t generation) {
+  if (recordCount == 0U || recordCount > MAX_QUEUE_RECORDS) {
+    return PrepareSnapshotResult::STORAGE_ERROR;
+  }
+
+  time_t synchronizedTime = 0;
+  bool timeChecked = false;
+  for (uint8_t index = 0U; index < recordCount; ++index) {
+    QueueSnapshotEntry &entry = _snapshot[index];
+    if (entry.record.sampleEpoch >= MINIMUM_VALID_EPOCH) {
+      continue;
+    }
+
+    if (!timeChecked) {
+      synchronizedTime = time(nullptr);
+      timeChecked = true;
+      if (static_cast<int64_t>(synchronizedTime) < MINIMUM_VALID_EPOCH) {
+        return PrepareSnapshotResult::WAITING_FOR_TIME;
+      }
+    }
+
+    int64_t recoveredSampleTime = static_cast<int64_t>(synchronizedTime);
+    if (entry.record.bootId == _bootId) {
+      const uint32_t ageSeconds =
+          (millis() - entry.record.capturedAtMillis) / 1000UL;
+      if (ageSeconds <= MAXIMUM_TIMESTAMP_RECOVERY_AGE_SECONDS &&
+          recoveredSampleTime - static_cast<int64_t>(ageSeconds) >=
+              MINIMUM_VALID_EPOCH) {
+        recoveredSampleTime -= static_cast<int64_t>(ageSeconds);
+      }
+    }
+
+    const TimestampUpdateResult updateResult = setRecordTimestamp(
+        entry.slot, entry.sequence, entry.messageId, recoveredSampleTime,
+        generation);
+    if (updateResult == TimestampUpdateResult::STALE) {
+      return PrepareSnapshotResult::STALE;
+    }
+    if (updateResult == TimestampUpdateResult::STORAGE_ERROR) {
+      return PrepareSnapshotResult::STORAGE_ERROR;
+    }
+
+    entry.record.sampleEpoch = recoveredSampleTime;
+    Serial.printf("[GSHEET] ID=%lu khoi phuc timestamp tu NTP\n",
+                  static_cast<unsigned long>(entry.messageId));
+  }
+  return PrepareSnapshotResult::READY;
 }
 
 bool GoogleSheetUploader::persistSlotLocked(
@@ -551,6 +636,38 @@ void GoogleSheetUploader::waitForTaskSignal(uint32_t timeoutMs) {
 
 bool GoogleSheetUploader::uploadRecord(
     const StoredTelemetryRecord &record, uint32_t generation) {
+  String payload;
+  if (!buildPayload(record, payload)) {
+    Serial.printf("[GSHEET] ID=%lu BUILD FAILED -> keep queue\n",
+                  static_cast<unsigned long>(record.messageId));
+    return false;
+  }
+  return uploadPayload(payload, generation, record.messageId, 1U);
+}
+
+bool GoogleSheetUploader::uploadBatch(const QueueSnapshotEntry *entries,
+                                      uint8_t recordCount,
+                                      uint32_t generation) {
+  if (entries == nullptr || recordCount < MINIMUM_BATCH_RECORDS ||
+      recordCount > MAX_QUEUE_RECORDS) {
+    return false;
+  }
+
+  String payload;
+  if (!buildBatchPayload(entries, recordCount, payload)) {
+    Serial.printf("[GSHEET] BATCH firstID=%lu count=%u BUILD FAILED -> keep queue\n",
+                  static_cast<unsigned long>(entries[0].messageId),
+                  static_cast<unsigned>(recordCount));
+    return false;
+  }
+  return uploadPayload(payload, generation, entries[0].messageId,
+                       recordCount);
+}
+
+bool GoogleSheetUploader::uploadPayload(const String &payload,
+                                        uint32_t generation,
+                                        uint32_t firstMessageId,
+                                        uint8_t recordCount) {
   if (!isGenerationCurrent(generation)) {
     return false;
   }
@@ -558,6 +675,14 @@ bool GoogleSheetUploader::uploadRecord(
   String path;
   if (!extractScriptPath(path)) {
     Serial.println("[GSHEET] SCRIPT_URL khong hop le");
+    return false;
+  }
+
+  String header;
+  if (payload.length() == 0U ||
+      !buildHttpHeader(path, payload.length(), header)) {
+    Serial.printf("[GSHEET] firstID=%lu HTTP BUILD FAILED -> keep queue\n",
+                  static_cast<unsigned long>(firstMessageId));
     return false;
   }
 
@@ -579,37 +704,26 @@ bool GoogleSheetUploader::uploadRecord(
                                        ? 1UL
                                        : handshakeTimeoutSeconds);
 
-  Serial.printf("[GSHEET] ID=%lu TLS CONNECT\n",
-                static_cast<unsigned long>(record.messageId));
+  if (recordCount >= MINIMUM_BATCH_RECORDS) {
+    Serial.printf("[GSHEET] BATCH firstID=%lu count=%u TLS CONNECT\n",
+                  static_cast<unsigned long>(firstMessageId),
+                  static_cast<unsigned>(recordCount));
+  } else {
+    Serial.printf("[GSHEET] ID=%lu TLS CONNECT\n",
+                  static_cast<unsigned long>(firstMessageId));
+  }
   if (!secureClient.connect(SCRIPT_HOST, SCRIPT_HTTPS_PORT,
                             static_cast<int32_t>(_config.connectTimeoutMs))) {
     secureClient.stop();
-    Serial.printf("[GSHEET] ID=%lu TLS CONNECT FAILED -> keep queue\n",
-                  static_cast<unsigned long>(record.messageId));
+    Serial.printf("[GSHEET] firstID=%lu TLS CONNECT FAILED -> keep queue\n",
+                  static_cast<unsigned long>(firstMessageId));
     return false;
   }
 
   if (!isGenerationCurrent(generation)) {
     secureClient.stop();
-    Serial.printf("[GSHEET] ID=%lu CANCELLED BY CLEAR\n",
-                  static_cast<unsigned long>(record.messageId));
-    return false;
-  }
-
-  String payload;
-  String header;
-  if (!buildPayload(record, payload) ||
-      !buildHttpHeader(path, payload.length(), header)) {
-    secureClient.stop();
-    Serial.printf("[GSHEET] ID=%lu BUILD FAILED -> keep queue\n",
-                  static_cast<unsigned long>(record.messageId));
-    return false;
-  }
-
-  if (!isGenerationCurrent(generation)) {
-    secureClient.stop();
-    Serial.printf("[GSHEET] ID=%lu CANCELLED BY CLEAR\n",
-                  static_cast<unsigned long>(record.messageId));
+    Serial.printf("[GSHEET] firstID=%lu CANCELLED BY CLEAR\n",
+                  static_cast<unsigned long>(firstMessageId));
     return false;
   }
 
@@ -617,8 +731,8 @@ bool GoogleSheetUploader::uploadRecord(
   const size_t headerWritten = writeAll(
       secureClient, reinterpret_cast<const uint8_t *>(header.c_str()),
       headerLength, _config.writeTimeoutMs, generation);
-  Serial.printf("[GSHEET] ID=%lu HEADER %u/%u\n",
-                static_cast<unsigned long>(record.messageId),
+  Serial.printf("[GSHEET] firstID=%lu HEADER %u/%u\n",
+                static_cast<unsigned long>(firstMessageId),
                 static_cast<unsigned>(headerWritten),
                 static_cast<unsigned>(headerLength));
 
@@ -626,11 +740,11 @@ bool GoogleSheetUploader::uploadRecord(
       !isGenerationCurrent(generation)) {
     secureClient.stop();
     if (isGenerationCurrent(generation)) {
-      Serial.printf("[GSHEET] ID=%lu TLS/WRITE FAILED -> keep queue\n",
-                    static_cast<unsigned long>(record.messageId));
+      Serial.printf("[GSHEET] firstID=%lu TLS/WRITE FAILED -> keep queue\n",
+                    static_cast<unsigned long>(firstMessageId));
     } else {
-      Serial.printf("[GSHEET] ID=%lu CANCELLED BY CLEAR\n",
-                    static_cast<unsigned long>(record.messageId));
+      Serial.printf("[GSHEET] firstID=%lu CANCELLED BY CLEAR\n",
+                    static_cast<unsigned long>(firstMessageId));
     }
     return false;
   }
@@ -639,8 +753,8 @@ bool GoogleSheetUploader::uploadRecord(
   const size_t payloadWritten = writeAll(
       secureClient, reinterpret_cast<const uint8_t *>(payload.c_str()),
       payloadLength, _config.writeTimeoutMs, generation);
-  Serial.printf("[GSHEET] ID=%lu PAYLOAD %u/%u\n",
-                static_cast<unsigned long>(record.messageId),
+  Serial.printf("[GSHEET] firstID=%lu PAYLOAD %u/%u\n",
+                static_cast<unsigned long>(firstMessageId),
                 static_cast<unsigned>(payloadWritten),
                 static_cast<unsigned>(payloadLength));
 
@@ -648,11 +762,11 @@ bool GoogleSheetUploader::uploadRecord(
       !isGenerationCurrent(generation)) {
     secureClient.stop();
     if (isGenerationCurrent(generation)) {
-      Serial.printf("[GSHEET] ID=%lu TLS/WRITE FAILED -> keep queue\n",
-                    static_cast<unsigned long>(record.messageId));
+      Serial.printf("[GSHEET] firstID=%lu TLS/WRITE FAILED -> keep queue\n",
+                    static_cast<unsigned long>(firstMessageId));
     } else {
-      Serial.printf("[GSHEET] ID=%lu CANCELLED BY CLEAR\n",
-                    static_cast<unsigned long>(record.messageId));
+      Serial.printf("[GSHEET] firstID=%lu CANCELLED BY CLEAR\n",
+                    static_cast<unsigned long>(firstMessageId));
     }
     return false;
   }
@@ -704,7 +818,76 @@ bool GoogleSheetUploader::buildPayload(
   }
   document["validFlags"] = record.validFlags;
 
-  payload.reserve(384U);
+  if (!payload.reserve(384U)) {
+    return false;
+  }
+  return serializeJson(document, payload) > 0U;
+}
+
+bool GoogleSheetUploader::buildBatchPayload(
+    const QueueSnapshotEntry *entries, uint8_t recordCount,
+    String &payload) {
+  if (entries == nullptr || recordCount < MINIMUM_BATCH_RECORDS ||
+      recordCount > MAX_QUEUE_RECORDS) {
+    return false;
+  }
+
+  JsonDocument document;
+  document["action"] = "appendTelemetryBatch";
+  document["token"] = _config.sharedSecret;
+  document["towerId"] = _config.towerId;
+  document["nodeId"] = entries[0].record.nodeId;
+  JsonArray records = document["records"].to<JsonArray>();
+
+  for (uint8_t index = 0U; index < recordCount; ++index) {
+    const StoredTelemetryRecord &record = entries[index].record;
+    if (record.nodeId != entries[0].record.nodeId ||
+        record.sampleEpoch < MINIMUM_VALID_EPOCH) {
+      return false;
+    }
+
+    const time_t sampleTime = static_cast<time_t>(record.sampleEpoch);
+    struct tm localTime = {};
+    if (!localtime_r(&sampleTime, &localTime)) {
+      return false;
+    }
+
+    char dateText[11];
+    char timeText[9];
+    if (strftime(dateText, sizeof(dateText), "%Y-%m-%d", &localTime) == 0U ||
+        strftime(timeText, sizeof(timeText), "%H:%M:%S", &localTime) == 0U) {
+      return false;
+    }
+
+    char messageIdText[11];
+    snprintf(messageIdText, sizeof(messageIdText), "%lu",
+             static_cast<unsigned long>(record.messageId));
+
+    JsonObject item = records.add<JsonObject>();
+    if (item.isNull()) {
+      return false;
+    }
+    item["messageId"] = messageIdText;
+    item["sampleTimestamp"] = record.sampleEpoch;
+    item["date"] = dateText;
+    item["time"] = timeText;
+    item["x"] = record.xDegrees;
+    item["y"] = record.yDegrees;
+    item["z"] = record.zDegrees;
+    item["battery"] = record.batteryVoltage;
+    if ((record.validFlags & FLAG_TEMPERATURE_VALID) != 0U &&
+        isfinite(record.temperatureCelsius)) {
+      item["temp"] = record.temperatureCelsius;
+    } else {
+      item["temp"] = nullptr;
+    }
+    item["validFlags"] = record.validFlags;
+  }
+
+  if (document.overflowed() ||
+      !payload.reserve(256U + static_cast<size_t>(recordCount) * 256U)) {
+    return false;
+  }
   return serializeJson(document, payload) > 0U;
 }
 

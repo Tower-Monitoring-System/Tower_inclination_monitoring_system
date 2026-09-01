@@ -22,6 +22,7 @@ static_assert(EXPECTED_LORA_NODE_ID == GoogleSheetConfig::NODE_ID,
 
 constexpr uint32_t CONNECTED_EFFECT_DURATION_MS = 1400UL;
 constexpr char WIFI_PORTAL_SSID[] = "Tower-Master-Setup";
+const IPAddress WIFI_PORTAL_IP(200, 5, 29, 8);
 constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000UL;
 constexpr uint8_t WIFI_CONNECTION_RETRY_COUNT = 2U;
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 5000UL;
@@ -47,11 +48,13 @@ MasterLoRaManager masterLoRa(loraSerial, LORA_RX_PIN, LORA_TX_PIN,
 GoogleSheetUploader googleSheetUploader(GoogleSheetConfig::UPLOADER);
 
 bool wifiConnectedCallbackPending = false;
+bool wifiPortalIpConfigured = false;
 bool wifiWasConnected = false;
 bool wifiEverConnected = false;
 uint32_t wifiConnectedAt = 0;
 bool ntpStarted = false;
-uint32_t nextQueueEnqueueAttemptAt = 0;
+bool queueEnqueueRetryScheduled = false;
+uint32_t queueEnqueueRetryAt = 0;
 bool queueClearButtonRawState = HIGH;
 bool queueClearButtonStableState = HIGH;
 bool queueClearButtonPressArmed = false;
@@ -74,6 +77,7 @@ bool startWifiConfigPortal(uint32_t timeoutMs);
 void updateWifiStateAndDisplay(uint32_t now);
 void startNtpIfNeeded();
 bool isNtpTimeSynchronized();
+bool timeReached(uint32_t now, uint32_t deadline);
 void captureNewTelemetry();
 void logInvalidTelemetry(const MasterTelemetry &telemetry);
 void handleQueueClearButton(uint32_t now);
@@ -105,6 +109,17 @@ void setup() {
   masterLoRa.begin(millis());
   syncLoRaDashboardState();
   syncGoogleSheetDashboardState();
+
+  // Cau hinh dia chi SoftAP cua Config Portal qua API thu vien. Khong cho
+  // phep am tham quay ve IP mac dinh 192.168.4.1 neu cau hinh that bai.
+  wifiPortalIpConfigured = wifiPortal.setPortalIP(WIFI_PORTAL_IP);
+  if (!wifiPortalIpConfigured) {
+    Serial.print("[WIFI] Cau hinh Portal IP that bai: ");
+    Serial.println(wifiPortal.lastError());
+  } else {
+    Serial.print("[WIFI] Portal IP da cau hinh: ");
+    Serial.println(wifiPortal.portalIP());
+  }
 
   wifiPortal.setConnectTimeout(WIFI_CONNECT_TIMEOUT_MS);
   if (!wifiPortal.setConnectionRetryPolicy(
@@ -145,6 +160,12 @@ void loop() {
 }
 
 bool startWifiConfigPortal(uint32_t timeoutMs) {
+  if (!wifiPortalIpConfigured) {
+    Serial.println(
+        "[WIFI] Khong mo Config Portal vi Portal IP 200.5.29.8 chua duoc cau hinh");
+    return false;
+  }
+
   if (wifiPortal.isPortalActive()) {
     return true;
   }
@@ -234,10 +255,18 @@ bool isNtpTimeSynchronized() {
   return time(nullptr) >= MINIMUM_VALID_NTP_TIME;
 }
 
+bool timeReached(uint32_t now, uint32_t deadline) {
+  return static_cast<int32_t>(now - deadline) >= 0;
+}
+
 void captureNewTelemetry() {
   const uint32_t now = millis();
-  if (static_cast<int32_t>(now - nextQueueEnqueueAttemptAt) < 0) {
-    return;
+  if (queueEnqueueRetryScheduled) {
+    if (!timeReached(now, queueEnqueueRetryAt)) {
+      return;
+    }
+    queueEnqueueRetryScheduled = false;
+    queueEnqueueRetryAt = 0U;
   }
 
   MasterTelemetry telemetry;
@@ -267,7 +296,8 @@ void captureNewTelemetry() {
       Serial.printf("[QUEUE] ID=%lu FAILED: queue day, giu nguyen %u mau cu\n",
                     static_cast<unsigned long>(telemetry.messageId),
                     static_cast<unsigned>(googleSheetUploader.pendingCount()));
-      nextQueueEnqueueAttemptAt = now + QUEUE_ENQUEUE_RETRY_MS;
+      queueEnqueueRetryAt = now + QUEUE_ENQUEUE_RETRY_MS;
+      queueEnqueueRetryScheduled = true;
       break;
     case TelemetryEnqueueResult::INVALID:
       logInvalidTelemetry(telemetry);
@@ -277,7 +307,8 @@ void captureNewTelemetry() {
     default:
       Serial.printf("[QUEUE] ID=%lu FAILED: loi NVS\n",
                     static_cast<unsigned long>(telemetry.messageId));
-      nextQueueEnqueueAttemptAt = now + QUEUE_ENQUEUE_RETRY_MS;
+      queueEnqueueRetryAt = now + QUEUE_ENQUEUE_RETRY_MS;
+      queueEnqueueRetryScheduled = true;
       break;
   }
 
@@ -288,7 +319,8 @@ void captureNewTelemetry() {
       Serial.printf("[LORA] ID=%lu WARN: telemetry state changed before ACK\n",
                     static_cast<unsigned long>(telemetry.messageId));
     }
-    nextQueueEnqueueAttemptAt = 0U;
+    queueEnqueueRetryScheduled = false;
+    queueEnqueueRetryAt = 0U;
   }
 }
 
@@ -354,7 +386,8 @@ void handleQueueClearButton(uint32_t now) {
 
 void clearTelemetryQueue() {
   if (googleSheetUploader.clearQueue()) {
-    nextQueueEnqueueAttemptAt = 0U;
+    queueEnqueueRetryScheduled = false;
+    queueEnqueueRetryAt = 0U;
     Serial.println("[QUEUE] CLEAR -> pending=0");
   } else {
     Serial.println("[QUEUE] CLEAR FAILED -> queue unchanged");

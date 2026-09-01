@@ -44,9 +44,10 @@ struct GoogleSheetUploaderConfig {
 /**
  * Persistent telemetry queue and asynchronous Google Sheet uploader.
  *
- * HTTPS runs only in a dedicated FreeRTOS task. A record is removed as soon
- * as its complete HTTP request has been written to TLS; no response is read.
- * enqueue() writes one compact record to NVS and never overwrites older data.
+ * HTTPS runs only in a dedicated FreeRTOS task. For 1-2 pending records it
+ * sends one record per request; for 3-32 it sends one immutable FIFO snapshot.
+ * Snapshot records are removed only after the complete request is written to
+ * TLS; no response is read. enqueue() persists before returning QUEUED.
  */
 class GoogleSheetUploader {
 public:
@@ -68,7 +69,21 @@ private:
     STORAGE_ERROR
   };
 
+  enum class PrepareSnapshotResult : uint8_t {
+    READY,
+    WAITING_FOR_TIME,
+    STALE,
+    STORAGE_ERROR
+  };
+
+  enum class TimestampUpdateResult : uint8_t {
+    UPDATED,
+    STALE,
+    STORAGE_ERROR
+  };
+
   static constexpr uint8_t MAX_QUEUE_RECORDS = 32U;
+  static constexpr uint8_t MINIMUM_BATCH_RECORDS = 3U;
   static constexpr uint32_t RECORD_MAGIC = 0x47535131UL;  // "GSQ1"
   static constexpr uint16_t RECORD_VERSION = 2U;
   static constexpr int64_t MINIMUM_VALID_EPOCH = 1704067200LL;
@@ -93,11 +108,21 @@ private:
     uint32_t checksum;
   };
 
+  // Kept as a member so a maximum-size batch never consumes uploader-task
+  // stack. sequence/messageId are captured separately for stale-slot checks.
+  struct QueueSnapshotEntry {
+    StoredTelemetryRecord record;
+    uint64_t sequence;
+    uint32_t messageId;
+    uint8_t slot;
+  };
+
   GoogleSheetUploaderConfig _config;
   Preferences _preferences;
   SemaphoreHandle_t _mutex;
   TaskHandle_t _taskHandle;
   StoredTelemetryRecord _records[MAX_QUEUE_RECORDS];
+  QueueSnapshotEntry _snapshot[MAX_QUEUE_RECORDS];
   uint64_t _nextSequence;
   uint32_t _bootId;
   uint32_t _queueGeneration;
@@ -117,12 +142,14 @@ private:
   int findFrontSlotLocked() const;
   int findFreeSlotLocked() const;
   bool containsMessageLocked(uint16_t nodeId, uint32_t messageId) const;
-  bool peekFront(StoredTelemetryRecord &record, uint8_t &slot,
-                 uint32_t &generation);
+  bool peekSnapshot(uint8_t &recordCount, uint32_t &generation);
   RemoveFrontResult removeFront(uint8_t slot, uint64_t sequence,
                                 uint32_t messageId, uint32_t generation);
-  bool setFrontTimestamp(uint8_t slot, uint64_t sequence,
-                         int64_t sampleEpoch, uint32_t generation);
+  TimestampUpdateResult setRecordTimestamp(
+      uint8_t slot, uint64_t sequence, uint32_t messageId,
+      int64_t sampleEpoch, uint32_t generation);
+  PrepareSnapshotResult prepareSnapshotTimestamps(
+      uint8_t recordCount, uint32_t generation);
   bool persistSlotLocked(uint8_t slot,
                          const StoredTelemetryRecord &record);
   uint32_t queueGeneration();
@@ -131,11 +158,17 @@ private:
 
   bool uploadRecord(const StoredTelemetryRecord &record,
                     uint32_t generation);
+  bool uploadBatch(const QueueSnapshotEntry *entries, uint8_t recordCount,
+                   uint32_t generation);
+  bool uploadPayload(const String &payload, uint32_t generation,
+                     uint32_t firstMessageId, uint8_t recordCount);
   size_t writeAll(WiFiClientSecure &client, const uint8_t *data,
                   size_t length, uint32_t timeoutMs,
                   uint32_t generation);
   bool isGenerationCurrent(uint32_t generation);
   bool buildPayload(const StoredTelemetryRecord &record, String &payload);
+  bool buildBatchPayload(const QueueSnapshotEntry *entries,
+                         uint8_t recordCount, String &payload);
   bool buildHttpHeader(const String &path, size_t payloadLength,
                        String &header) const;
   bool extractScriptPath(String &path) const;

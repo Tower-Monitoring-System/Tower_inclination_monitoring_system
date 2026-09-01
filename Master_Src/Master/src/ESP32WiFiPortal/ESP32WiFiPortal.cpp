@@ -22,12 +22,6 @@ uint32_t ipToUint32(const IPAddress& address) {
          static_cast<uint32_t>(address[3]);
 }
 
-bool isPrivateIPv4(const IPAddress& address) {
-  return address[0] == 10 ||
-         (address[0] == 172 && address[1] >= 16 && address[1] <= 31) ||
-         (address[0] == 192 && address[1] == 168);
-}
-
 bool isUsableUnicastIPv4(const IPAddress& address) {
   const uint32_t value = ipToUint32(address);
   return value != 0 && value != 0xFFFFFFFFUL && address[0] != 0 &&
@@ -59,16 +53,10 @@ bool isValidIPv4Network(const IPAddress& localIP,
 bool isValidPortalNetwork(const IPAddress& localIP,
                           const IPAddress& gateway,
                           const IPAddress& subnet) {
-  if (!isPrivateIPv4(localIP) || !isPrivateIPv4(gateway) ||
-      !isValidIPv4Network(localIP, gateway, subnet)) {
-    return false;
-  }
-
-  const uint32_t mask = ipToUint32(subnet);
-  uint32_t minimumPrivateMask = 0xFF000000UL;  // 10.0.0.0/8
-  if (localIP[0] == 172) minimumPrivateMask = 0xFFF00000UL;  // 172.16.0.0/12
-  if (localIP[0] == 192) minimumPrivateMask = 0xFFFF0000UL;  // 192.168.0.0/16
-  return (mask & minimumPrivateMask) == minimumPrivateMask;
+  // SoftAP can use any usable unicast IPv4 network. Keep the same strict
+  // host/subnet validation, but do not restrict setPortalIP() to RFC1918 so
+  // applications can intentionally choose addresses such as 200.5.29.8.
+  return isValidIPv4Network(localIP, gateway, subnet);
 }
 
 bool isValidDNS(const IPAddress& address) {
@@ -1191,7 +1179,7 @@ bool ESP32WiFiPortal::setPortalIP(const IPAddress& localIP,
     return false;
   }
   if (!isValidPortalNetwork(localIP, gateway, subnet)) {
-    setError("Portal IP, gateway, or subnet is not a usable private IPv4 network");
+    setError("Portal IP, gateway, or subnet is not a usable IPv4 network");
     return false;
   }
 
