@@ -654,7 +654,3 @@
   box-shadow: 0 0 0 4px rgba(237, 53, 72, 0.1);
 }
 
-.gateway-status > i.is-error {
-  background: var(--danger);
-  box-shadow: 0 0 0 4px rgba(237, 53, 72, 0.12);
-}

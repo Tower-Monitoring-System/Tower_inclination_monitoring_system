@@ -192,45 +192,12 @@
   border-top: 1px solid rgba(255, 255, 255, 0.075);
 }
 
-.gateway-status {
-  display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(90, 203, 169, 0.17);
-  border-radius: 12px;
-  background: rgba(29, 170, 128, 0.075);
-}
-
-.gateway-icon {
-  display: grid;
-  place-items: center;
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  color: #72e2be;
-  background: rgba(53, 203, 159, 0.13);
-}
-
-.gateway-icon svg {
-  width: 19px;
-  height: 19px;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.8;
-}
-
-.gateway-status div,
 .sidebar-account div {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.gateway-status strong,
 .sidebar-account strong {
   overflow: hidden;
   color: #eef7ff;
@@ -239,21 +206,12 @@
   white-space: nowrap;
 }
 
-.gateway-status span,
 .sidebar-account span {
   overflow: hidden;
   color: #83a8c9;
   font-size: 0.62rem;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.gateway-status > i {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #43d7a5;
-  box-shadow: 0 0 0 4px rgba(67, 215, 165, 0.1), 0 0 12px rgba(67, 215, 165, 0.5);
 }
 
 .sidebar-account {
@@ -1067,8 +1025,6 @@ tbody tr:hover {
 .sidebar-collapsed .nav-section-label,
 .sidebar-collapsed .nav-item span,
 .sidebar-collapsed .nav-item small,
-.sidebar-collapsed .gateway-status div,
-.sidebar-collapsed .gateway-status > i,
 .sidebar-collapsed .sidebar-account div,
 .sidebar-collapsed .sidebar-account button {
   display: none;
@@ -1084,12 +1040,6 @@ tbody tr:hover {
   justify-content: center;
   padding-right: 10px;
   padding-left: 10px;
-}
-
-.sidebar-collapsed .gateway-status {
-  display: flex;
-  justify-content: center;
-  padding: 8px;
 }
 
 .sidebar-collapsed .sidebar-account {
@@ -1184,8 +1134,6 @@ tbody tr:hover {
   .sidebar-collapsed .nav-section-label,
   .sidebar-collapsed .nav-item span,
   .sidebar-collapsed .nav-item small,
-  .sidebar-collapsed .gateway-status div,
-  .sidebar-collapsed .gateway-status > i,
   .sidebar-collapsed .sidebar-account div,
   .sidebar-collapsed .sidebar-account button {
     display: initial;
@@ -1199,12 +1147,6 @@ tbody tr:hover {
     display: grid;
     justify-content: initial;
     padding: 11px 13px;
-  }
-
-  .sidebar-collapsed .gateway-status {
-    display: grid;
-    justify-content: initial;
-    padding: 12px;
   }
 
   .sidebar-collapsed .sidebar-account {

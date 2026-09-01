@@ -1,5 +1,5 @@
 import { APP_CONFIG } from "../core/config.js";
-import { CONNECTION_STATUS, DASHBOARD_ACTION } from "../core/constants.js";
+import { DASHBOARD_ACTION } from "../core/constants.js";
 import { AlertPanel } from "./AlertPanel.js?v=20260824.1";
 
 export class Dashboard extends EventTarget {
@@ -37,10 +37,7 @@ export class Dashboard extends EventTarget {
       accountButton: byId("accountButton"),
       accountDropdown: byId("accountDropdown"),
       toast: byId("dashboardToast"),
-      toastMessage: byId("dashboardToastMessage"),
-      gatewayTitle: this.document.querySelector(".gateway-status strong"),
-      gatewayMessage: this.document.querySelector(".gateway-status div span"),
-      gatewayIndicator: this.document.querySelector(".gateway-status > i")
+      toastMessage: byId("dashboardToastMessage")
     };
   }
 
@@ -135,7 +132,6 @@ export class Dashboard extends EventTarget {
 
   render(state) {
     this.renderSafely("Summary", () => this.renderSummary(state.summary));
-    this.renderSafely("Connection status", () => this.renderConnectionStatus(state.connectionStatus));
 
     if (state.stations.length) {
       this.reveal();
@@ -172,20 +168,6 @@ export class Dashboard extends EventTarget {
 
   updateAlertSummary(summary) {
     this.renderSafely("Alert indicators", () => this.alertPanel.render(summary));
-  }
-
-  renderConnectionStatus(connectionStatus = {}) {
-    const apiStatus = connectionStatus.api;
-    const hasError = apiStatus === CONNECTION_STATUS.ERROR;
-    if (this.elements.gatewayTitle) {
-      this.elements.gatewayTitle.textContent = hasError ? "Data connection interrupted" : "Gateway online";
-    }
-    if (this.elements.gatewayMessage) {
-      this.elements.gatewayMessage.textContent = hasError
-        ? "Last valid monitoring data retained"
-        : "LoRa network stable";
-    }
-    this.elements.gatewayIndicator?.classList.toggle("is-error", hasError);
   }
 
   toggleNavigation() {
