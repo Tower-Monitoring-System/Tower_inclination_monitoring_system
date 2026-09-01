@@ -1,13 +1,7 @@
 import { AUTH_CONFIG } from "./core/config.js";
-import { AuthService } from "./services/authService.js?v=20260828.1";
+import { AuthService } from "./services/authService.js?v=20260901.1";
 
 let authService = null;
-
-window.addEventListener("pageshow", (event) => {
-  if (event.persisted) {
-    window.location.reload();
-  }
-});
 
 bootstrapSignIn();
 

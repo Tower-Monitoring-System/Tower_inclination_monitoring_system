@@ -3,6 +3,17 @@ import { SUPABASE_CONFIG } from "../core/supabaseConfig.js";
 
 let client = null;
 
+function clearLegacyPersistentAuthSession() {
+  try {
+    const projectRef = new URL(SUPABASE_CONFIG.url).hostname.split(".")[0];
+    const legacyStorageKey = `sb-${projectRef}-auth-token`;
+    window.localStorage.removeItem(legacyStorageKey);
+    window.localStorage.removeItem(`${legacyStorageKey}-code-verifier`);
+  } catch {
+    // Legacy local storage may be unavailable or already empty.
+  }
+}
+
 function assertBrowserConfig() {
   const { url, publishableKey } = SUPABASE_CONFIG;
   const hasPlaceholder =
@@ -32,9 +43,11 @@ export function getSupabaseClient() {
   }
 
   assertBrowserConfig();
+  clearLegacyPersistentAuthSession();
 
   client = createClient(SUPABASE_CONFIG.url, SUPABASE_CONFIG.publishableKey, {
     auth: {
+      storage: window.sessionStorage,
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: true

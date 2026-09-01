@@ -1,7 +1,7 @@
 import { SENSOR_DATA_CONFIG } from "../core/config.js";
 import { SUPABASE_CONFIG } from "../core/supabaseConfig.js";
 import { normalizeSensorListPayload } from "../logic/sensorDataProcessor.js";
-import { getSupabaseClient } from "./supabaseClient.js";
+import { getSupabaseClient } from "./supabaseClient.js?v=20260901.1";
 
 export class SensorDataRequestError extends Error {
   constructor(message, options = {}) {

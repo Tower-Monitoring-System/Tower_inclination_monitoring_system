@@ -101,7 +101,7 @@ Tower_inclination_monitoring_system/
 
 Authentication is handled by Supabase Auth and the `username-login` Edge Function. Passwords are not stored in the frontend source or in `public.profiles`.
 
-Every new dashboard entry requires a fresh sign-in. A successful sign-in creates a short-lived, single-use dashboard entry grant; direct visits, reloads, restored browser-history pages, and expired grants return to the Sign In page and clear the local Supabase session.
+The Supabase Auth session is stored in `sessionStorage`: reloads in the current tab remain signed in, while closing the tab ends the browser session and requires a new sign-in. Remember username remains a separate `localStorage` preference and never stores the password or login session.
 
 See `SUPABASE_SETUP.md` for setup and deployment instructions.
 

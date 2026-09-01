@@ -1,6 +1,6 @@
 import { SUPABASE_CONFIG } from "../core/supabaseConfig.js";
 import { STORAGE_KEYS } from "../core/constants.js";
-import { getSupabaseClient } from "./supabaseClient.js";
+import { getSupabaseClient } from "./supabaseClient.js?v=20260901.1";
 
 const DEFAULT_IDENTITY = Object.freeze({
   username: "Operator",
@@ -8,8 +8,6 @@ const DEFAULT_IDENTITY = Object.freeze({
   role: "operator"
 });
 const ALLOWED_ROLES = new Set(["owner", "operator"]);
-const DASHBOARD_ENTRY_GRANT_KEY = "tower-monitor.dashboard-entry-grant.v1";
-const DASHBOARD_ENTRY_GRANT_LIFETIME_MS = 15000;
 
 export class AuthService {
   constructor(browserWindow = window) {
@@ -43,52 +41,7 @@ export class AuthService {
     }
   }
 
-  clearDashboardEntryGrant() {
-    try {
-      this.window.sessionStorage.removeItem(DASHBOARD_ENTRY_GRANT_KEY);
-    } catch {
-      // Session storage may be unavailable in privacy-restricted contexts.
-    }
-  }
-
-  grantDashboardEntry() {
-    try {
-      this.window.sessionStorage.setItem(
-        DASHBOARD_ENTRY_GRANT_KEY,
-        JSON.stringify({ expiresAt: Date.now() + DASHBOARD_ENTRY_GRANT_LIFETIME_MS })
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  consumeDashboardEntryGrant() {
-    let serializedGrant = null;
-    try {
-      serializedGrant = this.window.sessionStorage.getItem(DASHBOARD_ENTRY_GRANT_KEY);
-      this.window.sessionStorage.removeItem(DASHBOARD_ENTRY_GRANT_KEY);
-    } catch {
-      return false;
-    }
-
-    if (!serializedGrant) {
-      return false;
-    }
-
-    try {
-      const grant = JSON.parse(serializedGrant);
-      const now = Date.now();
-      return Number.isFinite(grant?.expiresAt) &&
-        grant.expiresAt >= now &&
-        grant.expiresAt <= now + DASHBOARD_ENTRY_GRANT_LIFETIME_MS;
-    } catch {
-      return false;
-    }
-  }
-
   async clearLocalSession() {
-    this.clearDashboardEntryGrant();
     try {
       await this.client.auth.signOut({ scope: "local" });
     } catch (error) {
@@ -167,7 +120,6 @@ export class AuthService {
   }
 
   async signIn(username, password, options = {}) {
-    this.clearDashboardEntryGrant();
     const normalizedUsername = this.normalizeUsername(username);
     if (!normalizedUsername || typeof password !== "string" || !password) {
       return { ok: false, reason: "invalid_credentials" };
@@ -210,22 +162,13 @@ export class AuthService {
     }
 
     this.rememberUsername(normalizedUsername, Boolean(options.rememberUsername));
-    if (!this.grantDashboardEntry()) {
-      await this.clearLocalSession();
-      return { ok: false, reason: "session_error" };
-    }
     return { ok: true, identity };
   }
 
   async guardDashboard() {
-    if (!this.consumeDashboardEntryGrant()) {
-      await this.clearLocalSession();
-      this.redirect("sign-in.html");
-      return null;
-    }
-
     const identity = await this.getAuthenticatedIdentity();
     if (!identity) {
+      await this.clearLocalSession();
       this.redirect("sign-in.html");
       return null;
     }
@@ -233,6 +176,12 @@ export class AuthService {
   }
 
   async guardSignIn() {
+    const identity = await this.getAuthenticatedIdentity();
+    if (identity) {
+      this.redirect("index.html");
+      return false;
+    }
+
     await this.clearLocalSession();
     return true;
   }
