@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="./css/dashboard.css?v=20260824.14" />
   <link rel="stylesheet" href="./css/list.css?v=20260824.6" />
   <link rel="stylesheet" href="./css/alerts.css?v=20260824.3" />
-  <link rel="stylesheet" href="./css/towers.css?v=20260825.1" />
+  <link rel="stylesheet" href="./css/towers.css?v=20260901.3" />
   <link rel="stylesheet" href="./css/settings.css?v=20260827.1" />
 </head>
 <body class="dashboard-loading" data-page="dashboard">
@@ -327,14 +327,7 @@
                       aria-describedby="towerVectorInteractionHint"
                       aria-label="Interactive three-axis visualization of the selected tower orientation"
                     ></canvas>
-                    <div class="tower-vector-zoom-controls" role="group" aria-label="3-axis chart zoom controls">
-                      <button id="towerVectorZoomOut" type="button" aria-label="Zoom out 3-axis chart" title="Zoom out">−</button>
-                      <button id="towerVectorZoomReset" class="tower-vector-zoom-value" type="button" aria-label="Reset 3-axis chart zoom" title="Reset zoom">
-                        <span id="towerVectorZoomValue">100%</span>
-                      </button>
-                      <button id="towerVectorZoomIn" type="button" aria-label="Zoom in 3-axis chart" title="Zoom in">+</button>
-                    </div>
-                    <p class="sr-only" id="towerVectorInteractionHint">Drag horizontally with the left mouse button to rotate around Z. Use the mouse wheel, plus and minus keys, or the zoom controls to zoom. Press 0 to reset zoom.</p>
+                    <p class="sr-only" id="towerVectorInteractionHint">Drag horizontally with the left mouse button to rotate around Z. Use the mouse wheel to zoom in or out.</p>
                     <p class="tower-chart-fallback" id="towerVectorFallback" hidden></p>
                     <div class="tower-chart-loading" id="towerVectorLoading" aria-hidden="true" hidden><span></span><p>Updating orientation…</p></div>
                   </div>
@@ -738,6 +731,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260901.2"></script>
+  <script type="module" src="./js/app.js?v=20260901.3"></script>
 </body>
 </html>

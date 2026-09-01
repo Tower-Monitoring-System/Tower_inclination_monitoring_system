@@ -1,5 +1,5 @@
 import { TowerTrendChart } from "../components/TowerTrendChart.js?v=20260824.3";
-import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260901.2";
+import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260901.3";
 import { TOWERS_CONFIG } from "../core/config.js?v=20260824.2";
 import {
   createTowerViewModel,
