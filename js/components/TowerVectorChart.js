@@ -13,7 +13,12 @@ const VIEW = Object.freeze({
   keyboardStep: 5,
   buttonStep: 15,
   fullRotation: 360,
-  groundDepth: 0.38
+  groundDepth: 0.44,
+  defaultZoom: 1,
+  minimumZoom: 0.7,
+  maximumZoom: 1.5,
+  zoomStep: 0.1,
+  wheelZoomStep: 0.08
 });
 
 function viewModelSignature(viewModel) {
@@ -68,16 +73,22 @@ export class TowerVectorChart {
     this.window = browserWindow;
     this.canvas = documentRef.getElementById("towerVectorCanvas");
     this.fallback = documentRef.getElementById("towerVectorFallback");
+    this.zoomOutButton = documentRef.getElementById("towerVectorZoomOut");
+    this.zoomResetButton = documentRef.getElementById("towerVectorZoomReset");
+    this.zoomInButton = documentRef.getElementById("towerVectorZoomIn");
+    this.zoomValue = documentRef.getElementById("towerVectorZoomValue");
     this.viewModel = null;
     this.period = "day";
     this.renderSignature = "";
     this.viewAzimuthDegrees = VIEW.defaultAzimuth;
+    this.zoomLevel = VIEW.defaultZoom;
     this.pointerDrag = null;
     this.drawFrame = null;
     this.resizeObserver = null;
     this.abortController = new this.window.AbortController();
 
     this.bindInteraction();
+    this.updateZoomControls();
     this.observeSize();
   }
 
@@ -95,6 +106,10 @@ export class TowerVectorChart {
     this.listen(this.canvas, "pointercancel", (event) => this.endPointerDrag(event));
     this.listen(this.canvas, "lostpointercapture", () => this.clearPointerDrag());
     this.listen(this.canvas, "keydown", (event) => this.handleKeydown(event));
+    this.listen(this.canvas, "wheel", (event) => this.handleWheel(event), { passive: false });
+    this.listen(this.zoomOutButton, "click", () => this.changeZoom(-VIEW.zoomStep));
+    this.listen(this.zoomInButton, "click", () => this.changeZoom(VIEW.zoomStep));
+    this.listen(this.zoomResetButton, "click", () => this.setZoom(VIEW.defaultZoom));
   }
 
   observeSize() {
@@ -130,6 +145,37 @@ export class TowerVectorChart {
     this.requestDraw();
   }
 
+  setZoom(value) {
+    const nextValue = clamp(Number(value) || VIEW.defaultZoom, VIEW.minimumZoom, VIEW.maximumZoom);
+    if (Math.abs(nextValue - this.zoomLevel) < 0.001) {
+      return;
+    }
+    this.zoomLevel = nextValue;
+    this.updateZoomControls();
+    this.updateCanvasLabel();
+    this.requestDraw();
+  }
+
+  changeZoom(delta) {
+    this.setZoom(this.zoomLevel + delta);
+  }
+
+  updateZoomControls() {
+    const percentage = Math.round(this.zoomLevel * 100);
+    if (this.zoomValue) {
+      this.zoomValue.textContent = `${percentage}%`;
+    }
+    if (this.zoomOutButton) {
+      this.zoomOutButton.disabled = this.zoomLevel <= VIEW.minimumZoom + 0.001;
+    }
+    if (this.zoomInButton) {
+      this.zoomInButton.disabled = this.zoomLevel >= VIEW.maximumZoom - 0.001;
+    }
+    if (this.zoomResetButton) {
+      this.zoomResetButton.setAttribute("aria-label", `Reset 3-axis chart zoom. Current zoom ${percentage} percent.`);
+    }
+  }
+
   updateCanvasLabel() {
     if (!this.canvas) {
       return;
@@ -138,9 +184,10 @@ export class TowerVectorChart {
     const tilt = Number.isFinite(this.viewModel?.resultant)
       ? `${this.viewModel.resultant.toFixed(2)} degrees`
       : "unavailable";
+    const zoom = Math.round(this.zoomLevel * 100);
     this.canvas.setAttribute(
       "aria-label",
-      `Interactive three-axis orientation for the selected ${this.period} period. Tilt ${tilt}. View ${angle} degrees around Z. Drag horizontally or use the left and right arrow keys to rotate.`
+      `Interactive three-axis orientation for the selected ${this.period} period. Tilt ${tilt}. View ${angle} degrees around Z. Zoom ${zoom} percent. Drag horizontally to rotate. Use the mouse wheel, plus and minus keys, or zoom controls to zoom.`
     );
   }
 
@@ -207,7 +254,31 @@ export class TowerVectorChart {
     if (event.key === "Home") {
       this.setViewAzimuth(VIEW.defaultAzimuth);
       event.preventDefault();
+      return;
     }
+    if (["+", "=", "Add"].includes(event.key)) {
+      this.changeZoom(VIEW.zoomStep);
+      event.preventDefault();
+      return;
+    }
+    if (["-", "_", "Subtract"].includes(event.key)) {
+      this.changeZoom(-VIEW.zoomStep);
+      event.preventDefault();
+      return;
+    }
+    if (event.key === "0") {
+      this.setZoom(VIEW.defaultZoom);
+      event.preventDefault();
+    }
+  }
+
+  handleWheel(event) {
+    if (!this.viewModel?.latest || !Number.isFinite(event.deltaY) || event.deltaY === 0) {
+      return;
+    }
+    const direction = event.deltaY < 0 ? 1 : -1;
+    this.changeZoom(direction * VIEW.wheelZoomStep);
+    event.preventDefault();
   }
 
   requestDraw() {
@@ -260,8 +331,10 @@ export class TowerVectorChart {
     const reading = this.viewModel.latest;
     const total = clamp(Number(this.viewModel.resultant) || 0, 0, 89.5);
     const origin = { x: width * 0.5, y: height * 0.76 };
-    const groundScale = Math.max(62, Math.min(width * 0.27, height * 0.3, 155));
-    const verticalScale = Math.max(125, Math.min(width * 0.42, height * 0.56, 225));
+    const baseGroundScale = Math.max(74, Math.min(width * 0.33, height * 0.34, 176));
+    const baseVerticalScale = Math.max(142, Math.min(width * 0.48, height * 0.58, 248));
+    const groundScale = baseGroundScale * this.zoomLevel;
+    const verticalScale = baseVerticalScale * this.zoomLevel;
     const project = this.createProjector(origin, groundScale, verticalScale);
 
     this.drawGroundGrid(context, project);

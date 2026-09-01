@@ -729,7 +729,7 @@
   grid-template-columns: 88px minmax(260px, 1fr) 105px;
   align-items: stretch;
   gap: 9px;
-  height: 444px;
+  height: 464px;
   min-height: 0;
   padding: 14px;
 }
@@ -775,13 +775,70 @@
 
 .tower-vector-wrap {
   isolation: isolate;
-  height: 400px;
+  height: 420px;
   min-height: 0;
+  overflow: hidden;
 }
 
 .tower-vector-wrap canvas {
   cursor: grab;
   touch-action: none;
+}
+
+.tower-vector-zoom-controls {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid rgba(207, 219, 232, 0.94);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.93);
+  box-shadow: 0 5px 16px rgba(31, 56, 88, 0.09);
+  backdrop-filter: blur(7px);
+}
+
+.tower-vector-zoom-controls button {
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  color: #35506f;
+  background: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tower-vector-zoom-controls button:hover:not(:disabled),
+.tower-vector-zoom-controls button:focus-visible {
+  color: var(--primary);
+  background: #edf5ff;
+  outline: none;
+}
+
+.tower-vector-zoom-controls button:focus-visible {
+  box-shadow: inset 0 0 0 2px rgba(23, 111, 242, 0.28);
+}
+
+.tower-vector-zoom-controls button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.tower-vector-zoom-controls .tower-vector-zoom-value {
+  min-width: 54px;
+  color: #53647a;
+  font-size: 0.56rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .tower-vector-wrap canvas.is-dragging {
@@ -1012,7 +1069,7 @@
   }
 
   .tower-vector-wrap {
-    height: 330px;
+    height: 360px;
   }
 
   .tower-orientation-summary {
