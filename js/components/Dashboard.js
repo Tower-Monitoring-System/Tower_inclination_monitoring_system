@@ -255,13 +255,17 @@ export class Dashboard extends EventTarget {
       return;
     }
 
+    const normalizedType = ["success", "warning", "error"].includes(type) ? type : "info";
     this.window.clearTimeout(this.toastTimer);
     this.elements.toastMessage.textContent = message;
-    this.elements.toast.classList.toggle("is-warning", type === "warning");
-    this.elements.toast.classList.toggle("is-error", type === "error");
+    this.elements.toast.classList.remove("is-success", "is-warning", "is-error");
+    if (normalizedType !== "info") {
+      this.elements.toast.classList.add(`is-${normalizedType}`);
+    }
     this.elements.toast.classList.add("is-visible");
     this.toastTimer = this.window.setTimeout(() => {
       this.elements.toast?.classList.remove("is-visible");
+      this.toastTimer = null;
     }, APP_CONFIG.toastDurationMs);
   }
 

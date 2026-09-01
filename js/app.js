@@ -1,4 +1,4 @@
-import { Dashboard } from "./components/Dashboard.js?v=20260824.4";
+import { Dashboard } from "./components/Dashboard.js?v=20260901.1";
 import { APP_CONFIG, MQTT_CONFIG } from "./core/config.js?v=20260824.2";
 import {
   CONNECTION_STATUS,

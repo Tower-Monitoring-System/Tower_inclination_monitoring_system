@@ -1264,9 +1264,12 @@ tbody tr:hover {
   }
 
   .toast {
+    top: 82px;
     right: 16px;
-    bottom: 16px;
+    bottom: auto;
     left: 16px;
+    width: auto;
+    max-height: calc(100dvh - 98px);
   }
 }
 
