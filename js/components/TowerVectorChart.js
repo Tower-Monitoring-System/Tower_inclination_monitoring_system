@@ -68,13 +68,6 @@ export class TowerVectorChart {
     this.window = browserWindow;
     this.canvas = documentRef.getElementById("towerVectorCanvas");
     this.fallback = documentRef.getElementById("towerVectorFallback");
-    this.controls = {
-      rotateLeft: documentRef.getElementById("towerVectorRotateLeft"),
-      rotateRight: documentRef.getElementById("towerVectorRotateRight"),
-      slider: documentRef.getElementById("towerVectorAzimuth"),
-      output: documentRef.getElementById("towerVectorAzimuthValue"),
-      reset: documentRef.getElementById("towerVectorResetView")
-    };
     this.viewModel = null;
     this.period = "day";
     this.renderSignature = "";
@@ -85,8 +78,6 @@ export class TowerVectorChart {
     this.abortController = new this.window.AbortController();
 
     this.bindInteraction();
-    this.syncControls();
-    this.updateControlAvailability(false);
     this.observeSize();
   }
 
@@ -98,20 +89,6 @@ export class TowerVectorChart {
   }
 
   bindInteraction() {
-    this.listen(this.controls.rotateLeft, "click", () => {
-      this.setViewAzimuth(this.viewAzimuthDegrees - VIEW.buttonStep);
-    });
-    this.listen(this.controls.rotateRight, "click", () => {
-      this.setViewAzimuth(this.viewAzimuthDegrees + VIEW.buttonStep);
-    });
-    this.listen(this.controls.reset, "click", () => {
-      this.setViewAzimuth(VIEW.defaultAzimuth);
-      this.canvas?.focus({ preventScroll: true });
-    });
-    this.listen(this.controls.slider, "input", (event) => {
-      this.setViewAzimuth(event.target.value);
-    });
-
     this.listen(this.canvas, "pointerdown", (event) => this.startPointerDrag(event));
     this.listen(this.canvas, "pointermove", (event) => this.movePointerDrag(event));
     this.listen(this.canvas, "pointerup", (event) => this.endPointerDrag(event));
@@ -133,7 +110,6 @@ export class TowerVectorChart {
   render(viewModel, options = {}) {
     this.period = ["day", "month", "custom"].includes(options.period) ? options.period : "day";
     this.viewModel = viewModel;
-    this.updateControlAvailability(Boolean(viewModel?.latest));
     this.updateCanvasLabel();
 
     const nextSignature = `${this.period}|${viewModelSignature(viewModel)}`;
@@ -147,39 +123,11 @@ export class TowerVectorChart {
   setViewAzimuth(value) {
     const nextValue = normalizeDegrees(value);
     if (Math.abs(nextValue - this.viewAzimuthDegrees) < 0.01) {
-      this.syncControls();
       return;
     }
     this.viewAzimuthDegrees = nextValue;
-    this.syncControls();
     this.updateCanvasLabel();
     this.requestDraw();
-  }
-
-  syncControls() {
-    const displayValue = Math.round(normalizeDegrees(this.viewAzimuthDegrees)) % VIEW.fullRotation;
-    if (this.controls.slider) {
-      this.controls.slider.value = String(displayValue);
-      this.controls.slider.setAttribute("aria-valuetext", `${displayValue} degrees around the Z axis`);
-    }
-    if (this.controls.output) {
-      const text = `${displayValue}°`;
-      this.controls.output.value = text;
-      this.controls.output.textContent = text;
-    }
-  }
-
-  updateControlAvailability(available) {
-    [
-      this.controls.rotateLeft,
-      this.controls.rotateRight,
-      this.controls.slider,
-      this.controls.reset
-    ].forEach((control) => {
-      if (control) {
-        control.disabled = !available;
-      }
-    });
   }
 
   updateCanvasLabel() {

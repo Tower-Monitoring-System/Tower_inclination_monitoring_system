@@ -321,18 +321,6 @@
                     <div class="total"><dt>Resultant</dt><dd id="towerVectorResultant">—</dd></div>
                   </dl>
                   <div class="tower-canvas-wrap tower-vector-wrap">
-                    <div class="tower-vector-controls" role="group" aria-label="Rotate the 3D view around the Z axis">
-                      <button type="button" id="towerVectorRotateLeft" aria-label="Rotate view 15 degrees counterclockwise" title="Rotate left 15°">−</button>
-                      <label class="tower-vector-rotation" for="towerVectorAzimuth">
-                        <span>View around Z</span>
-                        <input id="towerVectorAzimuth" type="range" min="0" max="359" step="1" value="35" aria-label="View angle around the Z axis" />
-                        <output id="towerVectorAzimuthValue" for="towerVectorAzimuth">35°</output>
-                      </label>
-                      <button type="button" id="towerVectorRotateRight" aria-label="Rotate view 15 degrees clockwise" title="Rotate right 15°">+</button>
-                      <button class="tower-vector-reset" type="button" id="towerVectorResetView" aria-label="Reset 3D view" title="Reset view">
-                        <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
-                      </button>
-                    </div>
                     <canvas
                       id="towerVectorCanvas"
                       tabindex="0"

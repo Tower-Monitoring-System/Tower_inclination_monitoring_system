@@ -1,5 +1,96 @@
 var REQUIRED_HEADERS = Object.freeze(["Date", "Time", "X", "Y", "Z", "Battery"]);
 var MAXIMUM_ROWS = 20000;
+var TELEMETRY_ACTION = "appendTelemetry";
+var TELEMETRY_BATCH_ACTION = "appendTelemetryBatch";
+var TELEMETRY_BATCH_MIN_RECORDS = 3;
+var TELEMETRY_BATCH_MAX_RECORDS = 32;
+var TELEMETRY_TOWER_ID = "TWR-01";
+var TELEMETRY_NODE_ID = 1;
+var DEDUP_SHEET_NAME = "__TELEMETRY_DEDUP";
+var DEDUP_HEADERS = Object.freeze(["Key", "Status", "TargetRow", "Fingerprint", "CreatedAt"]);
+// Fire-and-Forget co the tao nhieu Web App execution cung luc. Cho lock du lau
+// de request khong bi mat chi vi Master khong doc response BUSY.
+var TELEMETRY_LOCK_TIMEOUT_MS = 120000;
+var TELEMETRY_SERVICE_VERSION = "tower-telemetry-v4-batch-fire-and-forget";
+
+// Mo URL /exec bang trinh duyet de kiem tra dung deployment va cau hinh.
+// Khong tra ve shared secret hay Spreadsheet ID.
+function doGet() {
+  var status = {
+    ok: false,
+    service: TELEMETRY_SERVICE_VERSION,
+    towerId: TELEMETRY_TOWER_ID,
+    nodeId: TELEMETRY_NODE_ID,
+    secretConfigured: false,
+    sheetConfigured: false,
+    towerSheetFound: false,
+    headersValid: false
+  };
+
+  try {
+    var properties = PropertiesService.getScriptProperties();
+    var expectedToken = properties.getProperty("SENSOR_DATA_SHARED_SECRET");
+    var sheetId = properties.getProperty("SENSOR_SHEET_ID");
+    status.secretConfigured = Boolean(expectedToken);
+    status.sheetConfigured = Boolean(sheetId);
+
+    if (sheetId) {
+      var spreadsheet = SpreadsheetApp.openById(sheetId);
+      var sheet = spreadsheet.getSheetByName(TELEMETRY_TOWER_ID);
+      status.towerSheetFound = Boolean(sheet);
+      status.headersValid = Boolean(sheet && hasFixedTelemetryHeaders_(sheet));
+    }
+    status.ok = status.secretConfigured && status.sheetConfigured &&
+      status.towerSheetFound && status.headersValid;
+    return jsonResponse_(status);
+  } catch (error) {
+    status.errorCode = "HEALTH_CHECK_FAILED";
+    status.error = String(error && error.message ? error.message : error);
+    return jsonResponse_(status);
+  }
+}
+
+// Chay mot lan trong Apps Script editor sau khi da dat Script Property
+// SENSOR_DATA_SHARED_SECRET. Neu script duoc bind voi Sheet, ham tu luu ID;
+// neu la standalone script, dat SENSOR_SHEET_ID truoc khi chay.
+function setupTelemetryService() {
+  var properties = PropertiesService.getScriptProperties();
+  if (!properties.getProperty("SENSOR_DATA_SHARED_SECRET")) {
+    throw new Error("Set Script Property SENSOR_DATA_SHARED_SECRET first.");
+  }
+
+  var sheetId = properties.getProperty("SENSOR_SHEET_ID");
+  var spreadsheet = sheetId
+    ? SpreadsheetApp.openById(sheetId)
+    : SpreadsheetApp.getActiveSpreadsheet();
+  if (!spreadsheet) {
+    throw new Error("Set Script Property SENSOR_SHEET_ID for a standalone script.");
+  }
+
+  properties.setProperty("SENSOR_SHEET_ID", spreadsheet.getId());
+  properties.setProperty("SENSOR_SHEET_NAME", TELEMETRY_TOWER_ID);
+  var sheet = spreadsheet.getSheetByName(TELEMETRY_TOWER_ID);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(TELEMETRY_TOWER_ID);
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, REQUIRED_HEADERS.length)
+      .setValues([REQUIRED_HEADERS.slice()]);
+    sheet.setFrozenRows(1);
+  } else if (!hasFixedTelemetryHeaders_(sheet)) {
+    throw new Error("TWR-01 columns A:F must be Date, Time, X, Y, Z, Battery.");
+  }
+  getOrCreateDedupSheet_(spreadsheet);
+
+  var result = {
+    ok: true,
+    service: TELEMETRY_SERVICE_VERSION,
+    towerId: TELEMETRY_TOWER_ID,
+    nodeId: TELEMETRY_NODE_ID
+  };
+  console.log(JSON.stringify(result));
+  return result;
+}
 
 function doPost(event) {
   try {
@@ -9,12 +100,27 @@ function doPost(event) {
     var fallbackSheetName = properties.getProperty("SENSOR_SHEET_NAME") || "";
 
     if (!expectedToken || !sheetId) {
-      return jsonResponse_({ ok: false, error: "Service is not configured." });
+      return jsonResponse_({
+        ok: false,
+        errorCode: "CONFIG_NOT_SET",
+        error: "Service is not configured."
+      });
     }
 
     var request = parseRequest_(event);
     if (!request || !safeEqual_(request.token, expectedToken)) {
-      return jsonResponse_({ ok: false, error: "Unauthorized request." });
+      return jsonResponse_({
+        ok: false,
+        errorCode: "UNAUTHORIZED",
+        error: "Unauthorized request."
+      });
+    }
+
+    if (request.action === TELEMETRY_ACTION) {
+      return appendTelemetry_(request, sheetId);
+    }
+    if (request.action === TELEMETRY_BATCH_ACTION) {
+      return appendTelemetryBatch_(request, sheetId);
     }
 
     var requestedTower = resolveRequestedTower_(request);
@@ -90,8 +196,839 @@ function doPost(event) {
       }
     });
   } catch (error) {
-    return jsonResponse_({ ok: false, error: "Sensor data is temporarily unavailable." });
+    console.error(error && error.stack ? error.stack : error);
+    return jsonResponse_({
+      ok: false,
+      errorCode: "INTERNAL_ERROR",
+      error: "Sensor data is temporarily unavailable."
+    });
   }
+}
+
+function appendTelemetry_(request, sheetId) {
+  var validation = validateTelemetryRequest_(request);
+  if (!validation.valid) {
+    return telemetryErrorResponse_(
+      validation.errorCode,
+      validation.error,
+      request
+    );
+  }
+
+  // Mo va kiem tra Sheet truoc khi lay lock de rut ngan critical section.
+  var spreadsheet = SpreadsheetApp.openById(sheetId);
+  var sheet = spreadsheet.getSheetByName(TELEMETRY_TOWER_ID);
+  if (!sheet) {
+    return telemetryErrorResponse_(
+      "SHEET_NOT_FOUND",
+      "Google Sheet TWR-01 was not found.",
+      validation.telemetry
+    );
+  }
+
+  if (!hasFixedTelemetryHeaders_(sheet)) {
+    return telemetryErrorResponse_(
+      "INVALID_SHEET_HEADERS",
+      "TWR-01 columns A:F must be Date, Time, X, Y, Z, Battery.",
+      validation.telemetry
+    );
+  }
+
+  var timeZone = spreadsheet.getSpreadsheetTimeZone() ||
+    Session.getScriptTimeZone() || "Asia/Ho_Chi_Minh";
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(TELEMETRY_LOCK_TIMEOUT_MS)) {
+    return telemetryErrorResponse_(
+      "LOCK_TIMEOUT",
+      "Telemetry service could not acquire the write lock.",
+      validation.telemetry
+    );
+  }
+
+  try {
+    var dedupSheet = getOrCreateDedupSheet_(spreadsheet);
+    return appendTelemetryIdempotently_(
+      sheet,
+      dedupSheet,
+      validation.telemetry,
+      timeZone
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function appendTelemetryBatch_(request, sheetId) {
+  var validation = validateTelemetryBatchRequest_(request);
+  if (!validation.valid) {
+    return telemetryErrorResponse_(
+      validation.errorCode,
+      validation.error,
+      validation.context || request
+    );
+  }
+
+  // Spreadsheet, telemetry sheet and dedup sheet are each opened once. The
+  // one ScriptLock below covers the complete two-phase batch transaction.
+  var spreadsheet = SpreadsheetApp.openById(sheetId);
+  var sheet = spreadsheet.getSheetByName(TELEMETRY_TOWER_ID);
+  if (!sheet) {
+    return telemetryErrorResponse_(
+      "SHEET_NOT_FOUND",
+      "Google Sheet TWR-01 was not found.",
+      validation.telemetry[0]
+    );
+  }
+  if (!hasFixedTelemetryHeaders_(sheet)) {
+    return telemetryErrorResponse_(
+      "INVALID_SHEET_HEADERS",
+      "TWR-01 columns A:F must be Date, Time, X, Y, Z, Battery.",
+      validation.telemetry[0]
+    );
+  }
+
+  var timeZone = spreadsheet.getSpreadsheetTimeZone() ||
+    Session.getScriptTimeZone() || "Asia/Ho_Chi_Minh";
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(TELEMETRY_LOCK_TIMEOUT_MS)) {
+    return telemetryErrorResponse_(
+      "LOCK_TIMEOUT",
+      "Telemetry service could not acquire the batch write lock.",
+      validation.telemetry[0]
+    );
+  }
+
+  try {
+    var dedupSheet = getOrCreateDedupSheet_(spreadsheet);
+    return appendTelemetryBatchIdempotently_(
+      sheet,
+      dedupSheet,
+      validation.telemetry,
+      timeZone
+    );
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function validateTelemetryRequest_(request) {
+  if (request.towerId !== TELEMETRY_TOWER_ID) {
+    return invalidTelemetry_("INVALID_TOWER_ID", "Only towerId TWR-01 is accepted.");
+  }
+
+  var nodeId = normalizeInteger_(request.nodeId, 1, 65535);
+  if (nodeId !== TELEMETRY_NODE_ID) {
+    return invalidTelemetry_("INVALID_NODE_ID", "Only Node 1 is accepted for TWR-01.");
+  }
+
+  var messageId = normalizeMessageId_(request.messageId);
+  if (messageId === null) {
+    return invalidTelemetry_("INVALID_MESSAGE_ID", "Message ID must be an unsigned 32-bit integer greater than zero.");
+  }
+
+  var date = normalizeDate_(request.date, "Asia/Ho_Chi_Minh");
+  var time = normalizeTime_(request.time, "Asia/Ho_Chi_Minh");
+  if (date === null || time === null) {
+    return invalidTelemetry_("INVALID_SAMPLE_TIME", "Valid date and time are required.");
+  }
+
+  var x = normalizeNumber_(request.x, -180, 180);
+  var y = normalizeNumber_(request.y, -180, 180);
+  var z = normalizeNumber_(request.z, -180, 180);
+  var battery = normalizeNumber_(request.battery, 0, 24);
+  if (x === null || y === null || z === null || battery === null) {
+    return invalidTelemetry_("INVALID_TELEMETRY", "X, Y, Z or Battery is invalid.");
+  }
+
+  var temperature = null;
+  if (request.temp !== null && request.temp !== undefined && request.temp !== "") {
+    temperature = normalizeNumber_(request.temp, -100, 200);
+    if (temperature === null) {
+      return invalidTelemetry_("INVALID_TEMPERATURE", "Temperature is invalid.");
+    }
+  }
+
+  if (request.sampleTimestamp !== undefined && request.sampleTimestamp !== null) {
+    var timestamp = normalizeInteger_(request.sampleTimestamp, 1, 4102444800);
+    if (timestamp === null) {
+      return invalidTelemetry_("INVALID_TIMESTAMP", "Sample timestamp is invalid.");
+    }
+  }
+
+  return {
+    valid: true,
+    telemetry: {
+      towerId: TELEMETRY_TOWER_ID,
+      nodeId: nodeId,
+      messageId: messageId,
+      date: date,
+      time: time,
+      x: x,
+      y: y,
+      z: z,
+      battery: battery,
+      temp: temperature
+    }
+  };
+}
+
+function validateTelemetryBatchRequest_(request) {
+  if (request.towerId !== TELEMETRY_TOWER_ID) {
+    return invalidTelemetry_("INVALID_TOWER_ID", "Only towerId TWR-01 is accepted.");
+  }
+
+  var nodeId = normalizeInteger_(request.nodeId, 1, 65535);
+  if (nodeId !== TELEMETRY_NODE_ID) {
+    return invalidTelemetry_("INVALID_NODE_ID", "Only Node 1 is accepted for TWR-01.");
+  }
+  if (!Array.isArray(request.records)) {
+    return invalidTelemetry_("INVALID_BATCH_RECORDS", "Batch records must be an array.");
+  }
+  if (request.records.length < TELEMETRY_BATCH_MIN_RECORDS ||
+      request.records.length > TELEMETRY_BATCH_MAX_RECORDS) {
+    return invalidTelemetry_(
+      "INVALID_BATCH_SIZE",
+      "A telemetry batch must contain from 3 to 32 records."
+    );
+  }
+
+  var telemetry = [];
+  for (var index = 0; index < request.records.length; index += 1) {
+    var record = request.records[index];
+    if (!record || typeof record !== "object" || Array.isArray(record)) {
+      return {
+        valid: false,
+        errorCode: "INVALID_BATCH_RECORD",
+        error: "Batch record " + index + " must be an object.",
+        context: request
+      };
+    }
+
+    // Reuse exactly the single-record validation rules by combining the
+    // common tower/node fields with this record's telemetry fields.
+    var recordValidation = validateTelemetryRequest_({
+      towerId: request.towerId,
+      nodeId: request.nodeId,
+      messageId: record.messageId,
+      sampleTimestamp: record.sampleTimestamp,
+      date: record.date,
+      time: record.time,
+      x: record.x,
+      y: record.y,
+      z: record.z,
+      battery: record.battery,
+      temp: record.temp,
+      validFlags: record.validFlags
+    });
+    if (!recordValidation.valid) {
+      return {
+        valid: false,
+        errorCode: recordValidation.errorCode,
+        error: "Batch record " + index + ": " + recordValidation.error,
+        context: {
+          towerId: request.towerId,
+          nodeId: request.nodeId,
+          messageId: record.messageId
+        }
+      };
+    }
+    telemetry.push(recordValidation.telemetry);
+  }
+
+  return { valid: true, telemetry: telemetry };
+}
+
+function invalidTelemetry_(errorCode, error) {
+  return { valid: false, errorCode: errorCode, error: error };
+}
+
+function normalizeInteger_(value, minimum, maximum) {
+  var number = typeof value === "number" ? value : Number(String(value || "").trim());
+  return isFinite(number) && Math.floor(number) === number && number >= minimum && number <= maximum
+    ? number
+    : null;
+}
+
+function normalizeMessageId_(value) {
+  var text = String(value === undefined || value === null ? "" : value).trim();
+  if (!/^\d{1,10}$/.test(text)) {
+    return null;
+  }
+  var number = Number(text);
+  return number >= 1 && number <= 4294967295 && Math.floor(number) === number
+    ? String(number)
+    : null;
+}
+
+function hasFixedTelemetryHeaders_(sheet) {
+  if (sheet.getLastRow() < 1 || sheet.getMaxColumns() < REQUIRED_HEADERS.length) {
+    return false;
+  }
+  var headers = sheet.getRange(1, 1, 1, REQUIRED_HEADERS.length).getDisplayValues()[0];
+  return REQUIRED_HEADERS.every(function (requiredHeader, index) {
+    return String(headers[index]).trim().toLowerCase() === requiredHeader.toLowerCase();
+  });
+}
+
+function getOrCreateDedupSheet_(spreadsheet) {
+  var sheet = spreadsheet.getSheetByName(DEDUP_SHEET_NAME);
+  if (!sheet) {
+    sheet = spreadsheet.insertSheet(DEDUP_SHEET_NAME);
+    sheet.getRange(1, 1, 1, DEDUP_HEADERS.length).setValues([DEDUP_HEADERS.slice()]);
+    sheet.setFrozenRows(1);
+  } else {
+    var headers = sheet.getRange(1, 1, 1, DEDUP_HEADERS.length).getDisplayValues()[0];
+    var headersValid = DEDUP_HEADERS.every(function (header, index) {
+      return String(headers[index]).trim() === header;
+    });
+    if (!headersValid) {
+      throw new Error("Dedup sheet headers are invalid.");
+    }
+  }
+
+  if (!sheet.isSheetHidden()) {
+    sheet.hideSheet();
+  }
+  return sheet;
+}
+
+function appendTelemetryIdempotently_(sheet, dedupSheet, telemetry, timeZone) {
+  var key = telemetry.towerId + "|" + telemetry.messageId;
+  var fingerprint = telemetryFingerprint_(telemetry);
+  var dedupRow = findDedupRow_(dedupSheet, key);
+
+  if (dedupRow !== null) {
+    var dedupValues = dedupSheet.getRange(dedupRow, 1, 1, DEDUP_HEADERS.length).getValues()[0];
+    if (String(dedupValues[3]) !== fingerprint) {
+      return telemetryErrorResponse_(
+        "MESSAGE_ID_CONFLICT",
+        "This Message ID already exists with a different payload.",
+        telemetry
+      );
+    }
+
+    var status = String(dedupValues[1]);
+    var targetRow = normalizeInteger_(dedupValues[2], 2, sheet.getMaxRows());
+    if ((status !== "PENDING" && status !== "COMMITTED") || targetRow === null) {
+      return telemetryErrorResponse_(
+        "DEDUP_STATE_INVALID",
+        "Stored deduplication state is invalid.",
+        telemetry
+      );
+    }
+
+    var rowValues = sheet.getRange(targetRow, 1, 1, REQUIRED_HEADERS.length).getValues()[0];
+    var rowWasPresent = !isBlankTelemetryRow_(rowValues);
+    if (rowWasPresent && !telemetryRowMatches_(rowValues, telemetry, timeZone)) {
+      return telemetryErrorResponse_(
+        "DEDUP_TARGET_CONFLICT",
+        "The reserved telemetry row contains different data.",
+        telemetry
+      );
+    }
+
+    var needsFlush = false;
+    if (!rowWasPresent) {
+      sheet.getRange(targetRow, 1, 1, REQUIRED_HEADERS.length).setValues([telemetrySheetRow_(telemetry)]);
+      needsFlush = true;
+    }
+    if (status !== "COMMITTED") {
+      dedupSheet.getRange(dedupRow, 2).setValue("COMMITTED");
+      needsFlush = true;
+    }
+    if (needsFlush) {
+      SpreadsheetApp.flush();
+    }
+
+    return telemetryAcceptedResponse_(telemetry, status === "COMMITTED" || rowWasPresent);
+  }
+
+  var targetRow = nextTelemetryTargetRow_(sheet, dedupSheet);
+  var dedupTargetRow = dedupSheet.getLastRow() + 1;
+  ensureSheetRowExists_(sheet, targetRow);
+  ensureSheetRowExists_(dedupSheet, dedupTargetRow);
+  dedupSheet.getRange(dedupTargetRow, 1, 1, DEDUP_HEADERS.length).setValues([[
+    key,
+    "PENDING",
+    targetRow,
+    fingerprint,
+    new Date()
+  ]]);
+  SpreadsheetApp.flush();
+
+  sheet.getRange(targetRow, 1, 1, REQUIRED_HEADERS.length).setValues([telemetrySheetRow_(telemetry)]);
+  dedupSheet.getRange(dedupTargetRow, 2).setValue("COMMITTED");
+  SpreadsheetApp.flush();
+  return telemetryAcceptedResponse_(telemetry, false);
+}
+
+function appendTelemetryBatchIdempotently_(sheet, dedupSheet, telemetryList, timeZone) {
+  var dedupLastRow = dedupSheet.getLastRow();
+  var dedupValues = dedupLastRow >= 2
+    ? dedupSheet.getRange(2, 1, dedupLastRow - 1, DEDUP_HEADERS.length).getValues()
+    : [];
+  var dedupByKey = Object.create(null);
+  var reservationsByTarget = Object.create(null);
+  var maximumSheetRow = sheet.getMaxRows();
+
+  dedupValues.forEach(function (values, index) {
+    var key = String(values[0] || "");
+    var targetRow = normalizeInteger_(values[2], 2, maximumSheetRow);
+    var entry = {
+      key: key,
+      status: String(values[1]),
+      targetRow: targetRow,
+      fingerprint: String(values[3]),
+      dedupRow: index + 2
+    };
+    if (key && !Object.prototype.hasOwnProperty.call(dedupByKey, key)) {
+      dedupByKey[key] = entry;
+    }
+    if (targetRow !== null) {
+      var targetKey = String(targetRow);
+      if (!Object.prototype.hasOwnProperty.call(reservationsByTarget, targetKey)) {
+        reservationsByTarget[targetKey] = [];
+      }
+      reservationsByTarget[targetKey].push(entry);
+    }
+  });
+
+  // One A:F read is enough to validate all existing dedup targets and find
+  // reusable blank rows for every new Message ID.
+  var lastSheetRow = Math.max(1, sheet.getLastRow());
+  var telemetryRows = lastSheetRow >= 2
+    ? sheet.getRange(2, 1, lastSheetRow - 1, REQUIRED_HEADERS.length).getValues()
+    : [];
+  var plans = [];
+  var plansByKey = Object.create(null);
+  var claimedTargets = Object.create(null);
+
+  for (var index = 0; index < telemetryList.length; index += 1) {
+    var telemetry = telemetryList[index];
+    var key = telemetry.towerId + "|" + telemetry.messageId;
+    var fingerprint = telemetryFingerprint_(telemetry);
+    if (Object.prototype.hasOwnProperty.call(plansByKey, key)) {
+      if (plansByKey[key].fingerprint !== fingerprint) {
+        return telemetryErrorResponse_(
+          "MESSAGE_ID_CONFLICT",
+          "A batch contains the same Message ID with different payloads.",
+          telemetry
+        );
+      }
+      continue;
+    }
+
+    var existing = Object.prototype.hasOwnProperty.call(dedupByKey, key)
+      ? dedupByKey[key]
+      : null;
+    var plan = {
+      key: key,
+      fingerprint: fingerprint,
+      telemetry: telemetry,
+      isNew: existing === null,
+      dedupRow: null,
+      targetRow: null,
+      needsRow: false,
+      needsCommit: false
+    };
+
+    if (existing !== null) {
+      if (existing.fingerprint !== fingerprint) {
+        return telemetryErrorResponse_(
+          "MESSAGE_ID_CONFLICT",
+          "This Message ID already exists with a different payload.",
+          telemetry
+        );
+      }
+      if ((existing.status !== "PENDING" && existing.status !== "COMMITTED") ||
+          existing.targetRow === null) {
+        return telemetryErrorResponse_(
+          "DEDUP_STATE_INVALID",
+          "Stored deduplication state is invalid.",
+          telemetry
+        );
+      }
+
+      var rowValues = telemetryRowValuesForBatch_(
+        telemetryRows,
+        lastSheetRow,
+        existing.targetRow
+      );
+      var rowWasPresent = !isBlankTelemetryRow_(rowValues);
+      if (rowWasPresent && !telemetryRowMatches_(rowValues, telemetry, timeZone)) {
+        return telemetryErrorResponse_(
+          "DEDUP_TARGET_CONFLICT",
+          "The reserved telemetry row contains different data.",
+          telemetry
+        );
+      }
+
+      var claimedKey = String(existing.targetRow);
+      if (Object.prototype.hasOwnProperty.call(claimedTargets, claimedKey) &&
+          claimedTargets[claimedKey] !== key) {
+        return telemetryErrorResponse_(
+          "DEDUP_TARGET_CONFLICT",
+          "Multiple Message IDs reserve the same telemetry row.",
+          telemetry
+        );
+      }
+      claimedTargets[claimedKey] = key;
+      plan.dedupRow = existing.dedupRow;
+      plan.targetRow = existing.targetRow;
+      plan.needsRow = !rowWasPresent;
+      plan.needsCommit = existing.status !== "COMMITTED";
+    }
+
+    plans.push(plan);
+    plansByKey[key] = plan;
+  }
+
+  var staleDedupRows = Object.create(null);
+  var newPlans = [];
+  var candidateRow = 2;
+  plans.forEach(function (plan) {
+    if (!plan.isNew) {
+      return;
+    }
+
+    while (true) {
+      var candidateKey = String(candidateRow);
+      if (Object.prototype.hasOwnProperty.call(claimedTargets, candidateKey) ||
+          !isBlankTelemetryRow_(
+            telemetryRowValuesForBatch_(telemetryRows, lastSheetRow, candidateRow)
+          )) {
+        candidateRow += 1;
+        continue;
+      }
+
+      var reservations = reservationsByTarget[candidateKey] || [];
+      var hasPendingReservation = false;
+      var committedReservations = [];
+      for (var reservationIndex = 0;
+           reservationIndex < reservations.length;
+           reservationIndex += 1) {
+        var reservation = reservations[reservationIndex];
+        if (reservation.status === "PENDING") {
+          hasPendingReservation = true;
+          break;
+        }
+        if (reservation.status === "COMMITTED") {
+          committedReservations.push(reservation.dedupRow);
+          continue;
+        }
+        throw new Error("Dedup state is invalid for target row " + candidateRow + ".");
+      }
+      if (hasPendingReservation) {
+        candidateRow += 1;
+        continue;
+      }
+
+      committedReservations.forEach(function (dedupRow) {
+        staleDedupRows[String(dedupRow)] = dedupRow;
+      });
+      plan.targetRow = candidateRow;
+      plan.needsRow = true;
+      plan.needsCommit = true;
+      claimedTargets[candidateKey] = plan.key;
+      newPlans.push(plan);
+      candidateRow += 1;
+      break;
+    }
+  });
+
+  newPlans.forEach(function (plan, index) {
+    plan.dedupRow = dedupLastRow + index + 1;
+  });
+
+  var maximumTargetRow = plans.reduce(function (maximum, plan) {
+    return Math.max(maximum, plan.targetRow || 1);
+  }, 1);
+  ensureSheetRowExists_(sheet, maximumTargetRow);
+
+  // Phase 1: reserve every new Message ID as PENDING, then flush once. A
+  // retry can safely recover any request interrupted after this boundary.
+  if (newPlans.length > 0) {
+    ensureSheetRowExists_(dedupSheet, dedupLastRow + newPlans.length);
+    clearDedupRows_(dedupSheet, Object.keys(staleDedupRows).map(function (key) {
+      return staleDedupRows[key];
+    }));
+    dedupSheet
+      .getRange(dedupLastRow + 1, 1, newPlans.length, DEDUP_HEADERS.length)
+      .setValues(newPlans.map(function (plan) {
+        return [
+          plan.key,
+          "PENDING",
+          plan.targetRow,
+          plan.fingerprint,
+          new Date()
+        ];
+      }));
+    SpreadsheetApp.flush();
+  }
+
+  // Phase 2: write all missing telemetry rows in FIFO plan order, mark every
+  // PENDING reservation COMMITTED, and flush once for the whole batch.
+  var rowWritePlans = plans.filter(function (plan) {
+    return plan.needsRow;
+  });
+  writeTelemetryBatchRows_(sheet, rowWritePlans);
+
+  var commitRows = plans.filter(function (plan) {
+    return plan.needsCommit;
+  }).map(function (plan) {
+    return plan.dedupRow;
+  });
+  writeCommittedDedupRows_(dedupSheet, commitRows);
+  if (rowWritePlans.length > 0 || commitRows.length > 0) {
+    SpreadsheetApp.flush();
+  }
+
+  return jsonResponse_({
+    ok: true,
+    towerId: TELEMETRY_TOWER_ID,
+    nodeId: TELEMETRY_NODE_ID,
+    accepted: telemetryList.length,
+    unique: plans.length,
+    duplicate: telemetryList.length - newPlans.length
+  });
+}
+
+function telemetryRowValuesForBatch_(telemetryRows, lastSheetRow, rowNumber) {
+  if (rowNumber >= 2 && rowNumber <= lastSheetRow) {
+    return telemetryRows[rowNumber - 2];
+  }
+  return ["", "", "", "", "", ""];
+}
+
+function clearDedupRows_(dedupSheet, rows) {
+  contiguousRowGroups_(rows).forEach(function (group) {
+    dedupSheet
+      .getRange(group.start, 1, group.length, DEDUP_HEADERS.length)
+      .clearContent();
+  });
+}
+
+function writeTelemetryBatchRows_(sheet, plans) {
+  var sortedPlans = plans.slice().sort(function (left, right) {
+    return left.targetRow - right.targetRow;
+  });
+  var index = 0;
+  while (index < sortedPlans.length) {
+    var startRow = sortedPlans[index].targetRow;
+    var values = [telemetrySheetRow_(sortedPlans[index].telemetry)];
+    index += 1;
+    while (index < sortedPlans.length &&
+           sortedPlans[index].targetRow === startRow + values.length) {
+      values.push(telemetrySheetRow_(sortedPlans[index].telemetry));
+      index += 1;
+    }
+    sheet.getRange(startRow, 1, values.length, REQUIRED_HEADERS.length).setValues(values);
+  }
+}
+
+function writeCommittedDedupRows_(dedupSheet, rows) {
+  contiguousRowGroups_(rows).forEach(function (group) {
+    var values = [];
+    for (var index = 0; index < group.length; index += 1) {
+      values.push(["COMMITTED"]);
+    }
+    dedupSheet.getRange(group.start, 2, group.length, 1).setValues(values);
+  });
+}
+
+function contiguousRowGroups_(rows) {
+  var uniqueRows = Object.create(null);
+  rows.forEach(function (row) {
+    if (row !== null && row !== undefined) {
+      uniqueRows[String(row)] = Number(row);
+    }
+  });
+  var sortedRows = Object.keys(uniqueRows).map(function (key) {
+    return uniqueRows[key];
+  }).sort(function (left, right) {
+    return left - right;
+  });
+  var groups = [];
+  sortedRows.forEach(function (row) {
+    var lastGroup = groups.length > 0 ? groups[groups.length - 1] : null;
+    if (lastGroup && row === lastGroup.start + lastGroup.length) {
+      lastGroup.length += 1;
+    } else {
+      groups.push({ start: row, length: 1 });
+    }
+  });
+  return groups;
+}
+
+function findDedupRow_(sheet, key) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return null;
+  }
+  var match = sheet
+    .getRange(2, 1, lastRow - 1, 1)
+    .createTextFinder(key)
+    .matchEntireCell(true)
+    .findNext();
+  return match ? match.getRow() : null;
+}
+
+function nextTelemetryTargetRow_(sheet, dedupSheet) {
+  // Telemetry luon ghi du 6 cot A:F. Tim dong trong thuc su dau tien tu dong 2
+  // thay vi dua vao TargetRow cu trong __TELEMETRY_DEDUP.
+  var lastSheetRow = Math.max(1, sheet.getLastRow());
+  if (lastSheetRow >= 2) {
+    // Doc cot Date truoc de giam du lieu phai lay tu Sheets. Chi khi A trong
+    // moi doc A:F de xac nhan ca dong telemetry thuc su trong.
+    var dateValues = sheet.getRange(2, 1, lastSheetRow - 1, 1).getValues();
+    for (var index = 0; index < dateValues.length; index += 1) {
+      if (dateValues[index][0] !== "" && dateValues[index][0] !== null) {
+        continue;
+      }
+
+      var rowNumber = index + 2;
+      var rowValues = sheet
+        .getRange(rowNumber, 1, 1, REQUIRED_HEADERS.length)
+        .getValues()[0];
+      if (!isBlankTelemetryRow_(rowValues)) {
+        continue;
+      }
+
+      if (prepareBlankTelemetryRowForReuse_(dedupSheet, rowNumber)) {
+        return rowNumber;
+      }
+    }
+  }
+
+  // Khong co lo trong trong vung hien tai: dung dong ngay sau du lieu.
+  // Neu dong nay dang duoc mot execution PENDING giu, bo qua cho den dong
+  // dau tien khong con reservation dang hoat dong.
+  var targetRow = Math.max(2, lastSheetRow + 1);
+  while (!prepareBlankTelemetryRowForReuse_(dedupSheet, targetRow)) {
+    targetRow += 1;
+  }
+  return targetRow;
+}
+
+function prepareBlankTelemetryRowForReuse_(dedupSheet, targetRow) {
+  var lastDedupRow = dedupSheet.getLastRow();
+  if (lastDedupRow < 2) {
+    return true;
+  }
+
+  var matches = dedupSheet
+    .getRange(2, 3, lastDedupRow - 1, 1)
+    .createTextFinder(String(targetRow))
+    .matchEntireCell(true)
+    .findAll();
+
+  if (!matches || matches.length === 0) {
+    return true;
+  }
+
+  var staleRows = [];
+  for (var index = 0; index < matches.length; index += 1) {
+    var dedupRow = matches[index].getRow();
+    var status = String(dedupSheet.getRange(dedupRow, 2).getValue()).trim();
+
+    // PENDING co the la mot request da reserve dong nhung chua kip commit.
+    // Khong duoc ghi de len dong nay; retry cung Message ID se tu khoi phuc.
+    if (status === "PENDING") {
+      return false;
+    }
+
+    // COMMITTED + telemetry row dang trong chi co the xay ra khi du lieu A:F
+    // da bi xoa thu cong. Reservation nay da stale va phai duoc giai phong de
+    // dong trong co the duoc tai su dung tu tren xuong duoi.
+    if (status === "COMMITTED") {
+      staleRows.push(dedupRow);
+      continue;
+    }
+
+    // Trang thai khac cho thay dedup metadata bi hong; dung ghi de len de
+    // tranh lam mat kha nang truy vet.
+    throw new Error("Dedup state is invalid for target row " + targetRow + ".");
+  }
+
+  staleRows.forEach(function (dedupRow) {
+    dedupSheet.getRange(dedupRow, 1, 1, DEDUP_HEADERS.length).clearContent();
+  });
+  return true;
+}
+
+function ensureSheetRowExists_(sheet, rowNumber) {
+  var maximumRows = sheet.getMaxRows();
+  if (rowNumber > maximumRows) {
+    sheet.insertRowsAfter(maximumRows, rowNumber - maximumRows);
+  }
+}
+
+function telemetryFingerprint_(telemetry) {
+  return JSON.stringify([
+    telemetry.towerId,
+    telemetry.nodeId,
+    telemetry.messageId,
+    telemetry.date,
+    telemetry.time,
+    telemetry.x,
+    telemetry.y,
+    telemetry.z,
+    telemetry.battery,
+    telemetry.temp
+  ]);
+}
+
+function telemetrySheetRow_(telemetry) {
+  return [telemetry.date, telemetry.time, telemetry.x, telemetry.y, telemetry.z, telemetry.battery];
+}
+
+function isBlankTelemetryRow_(row) {
+  return row.every(function (value) {
+    return value === "" || value === null;
+  });
+}
+
+function telemetryRowMatches_(row, telemetry, timeZone) {
+  var date = normalizeDate_(row[0], timeZone);
+  var time = normalizeTime_(row[1], timeZone);
+  var x = normalizeNumber_(row[2], -180, 180);
+  var y = normalizeNumber_(row[3], -180, 180);
+  var z = normalizeNumber_(row[4], -180, 180);
+  var battery = normalizeNumber_(row[5], 0, 24);
+  return date === telemetry.date && time === telemetry.time &&
+    numbersEqual_(x, telemetry.x) && numbersEqual_(y, telemetry.y) &&
+    numbersEqual_(z, telemetry.z) && numbersEqual_(battery, telemetry.battery);
+}
+
+function numbersEqual_(left, right) {
+  return left !== null && right !== null && Math.abs(left - right) < 0.000001;
+}
+
+function telemetryAcceptedResponse_(telemetry, duplicate) {
+  return jsonResponse_({
+    ok: true,
+    towerId: telemetry.towerId,
+    nodeId: telemetry.nodeId,
+    messageId: telemetry.messageId,
+    duplicate: duplicate
+  });
+}
+
+// Master Fire-and-Forget khong doc JSON response. Ghi loi kem Message ID vao
+// Apps Script Executions de van truy vet duoc ma khong lam lo token bi mat.
+function telemetryErrorResponse_(errorCode, error, context) {
+  var safeContext = context || {};
+  console.error("[TELEMETRY] " + JSON.stringify({
+    errorCode: errorCode,
+    towerId: String(safeContext.towerId || ""),
+    nodeId: safeContext.nodeId === undefined ? "" : safeContext.nodeId,
+    messageId: String(safeContext.messageId || "")
+  }));
+  return jsonResponse_({
+    ok: false,
+    errorCode: errorCode,
+    error: error
+  });
 }
 
 function resolveRequestedTower_(request) {
