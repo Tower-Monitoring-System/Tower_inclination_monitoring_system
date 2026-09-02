@@ -1,14 +1,14 @@
 export const SETTINGS_LIMITS = Object.freeze({
   calibration: Object.freeze({ minimum: -180, maximum: 180 }),
   tiltThreshold: Object.freeze({ minimum: 0.1, maximum: 90 }),
-  battery: Object.freeze({ minimum: 3.3, maximum: 8.4, step: 0.1 }),
+  battery: Object.freeze({ minimum: 10, nominal: 12.8, maximum: 14.6, step: 0.1 }),
   alertCriticalMultiplier: 1.5
 });
 
 export const DEFAULT_SYSTEM_SETTINGS = Object.freeze({
   calibration: Object.freeze({ x: 0, y: 0, z: 0 }),
   tiltThresholds: Object.freeze({ x: 10, y: 10, z: 10 }),
-  battery: Object.freeze({ minimumVoltage: 3.7 }),
+  battery: Object.freeze({ minimumVoltage: SETTINGS_LIMITS.battery.nominal }),
   wifi: Object.freeze({
     ssid: "",
     password: "",
@@ -48,6 +48,13 @@ export function mergeSystemSettings(...sources) {
     settings.wifi = { ...settings.wifi, ...sourceObject(safeSource.wifi) };
     settings.accessPoint = { ...settings.accessPoint, ...sourceObject(safeSource.accessPoint) };
   });
+
+  const minimumVoltage = Number(settings.battery.minimumVoltage);
+  settings.battery.minimumVoltage = Number.isFinite(minimumVoltage) &&
+    minimumVoltage >= SETTINGS_LIMITS.battery.minimum &&
+    minimumVoltage <= SETTINGS_LIMITS.battery.maximum
+    ? minimumVoltage
+    : DEFAULT_SYSTEM_SETTINGS.battery.minimumVoltage;
 
   return settings;
 }

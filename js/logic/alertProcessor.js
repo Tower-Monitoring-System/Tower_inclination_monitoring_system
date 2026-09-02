@@ -3,7 +3,7 @@ import {
   ALERT_STATUS,
   ALERT_TYPE
 } from "../core/constants.js";
-import { createAlertConfiguration } from "../core/settingsDefaults.js";
+import { createAlertConfiguration } from "../core/settingsDefaults.js?v=20260902.1";
 
 const VALID_TYPES = new Set(["all", ...Object.values(ALERT_TYPE)]);
 const VALID_SEVERITIES = new Set(["all", ...Object.values(ALERT_SEVERITY)]);

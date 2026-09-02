@@ -4,7 +4,7 @@ import {
   filterAndSortAlerts,
   paginateAlerts,
   summarizeAlerts
-} from "../logic/alertProcessor.js";
+} from "../logic/alertProcessor.js?v=20260902.1";
 import {
   NO_TOWERS_MESSAGE,
   renderTowerSelect,

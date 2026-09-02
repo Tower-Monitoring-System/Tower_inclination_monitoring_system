@@ -1,4 +1,4 @@
-import { SETTINGS_LIMITS, mergeSystemSettings } from "../core/settingsDefaults.js";
+import { SETTINGS_LIMITS, mergeSystemSettings } from "../core/settingsDefaults.js?v=20260902.1";
 
 function setNestedValue(target, path, value) {
   const [group, field] = path.split(".");
@@ -117,6 +117,10 @@ export class SettingsPage {
       input.min = String(SETTINGS_LIMITS.battery.minimum);
       input.max = String(SETTINGS_LIMITS.battery.maximum);
       input.step = String(SETTINGS_LIMITS.battery.step);
+    });
+    this.document.querySelectorAll("[data-battery-limit-label]").forEach((label) => {
+      const value = Number(SETTINGS_LIMITS.battery[label.dataset.batteryLimitLabel]);
+      label.textContent = Number.isFinite(value) ? `${value.toFixed(1)} V` : "—";
     });
   }
 

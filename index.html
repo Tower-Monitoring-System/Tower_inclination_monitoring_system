@@ -639,7 +639,7 @@
                   <input id="settingsBatteryNumber" type="number" data-setting-path="battery.minimumVoltage" />
                   <div class="settings-range-wrap">
                     <input id="settingsBatteryRange" type="range" data-setting-path="battery.minimumVoltage" aria-label="Minimum battery voltage threshold" />
-                    <div><span>3.3 V</span><span>8.4 V</span></div>
+                    <div><span data-battery-limit-label="minimum"></span><span data-battery-limit-label="maximum"></span></div>
                   </div>
                 </div>
                 <small class="settings-inline-error" data-settings-error="battery.minimumVoltage" hidden></small>
@@ -731,6 +731,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260901.4"></script>
+  <script type="module" src="./js/app.js?v=20260902.1"></script>
 </body>
 </html>

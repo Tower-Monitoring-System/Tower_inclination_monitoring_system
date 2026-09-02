@@ -1,9 +1,12 @@
-import { mergeSystemSettings } from "../core/settingsDefaults.js";
+import {
+  DEFAULT_SYSTEM_SETTINGS,
+  mergeSystemSettings
+} from "../core/settingsDefaults.js?v=20260902.1";
 
 const MOCK_DEVICE_SETTINGS = Object.freeze({
   calibration: Object.freeze({ x: 0.64, y: 0, z: 0 }),
   tiltThresholds: Object.freeze({ x: 10, y: 10, z: 10 }),
-  battery: Object.freeze({ minimumVoltage: 3.7 }),
+  battery: DEFAULT_SYSTEM_SETTINGS.battery,
   wifi: Object.freeze({
     ssid: "TowerNet_5G",
     password: "tower-net",

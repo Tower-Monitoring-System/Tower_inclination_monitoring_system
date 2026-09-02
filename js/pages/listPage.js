@@ -1,5 +1,5 @@
 import { SENSOR_DATA_CONFIG } from "../core/config.js";
-import { createAlertConfiguration } from "../core/settingsDefaults.js";
+import { createAlertConfiguration } from "../core/settingsDefaults.js?v=20260902.1";
 import {
   filterSensorReadings,
   getLatestReadingDate,
