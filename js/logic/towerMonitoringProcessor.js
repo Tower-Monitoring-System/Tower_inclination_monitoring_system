@@ -1,11 +1,18 @@
-import { STATION_STATUS, WARNING_THRESHOLDS } from "../core/constants.js";
+import { STATION_STATUS } from "../core/constants.js";
+import { createAlertConfiguration } from "../core/settingsDefaults.js?v=20260902.2";
+import {
+  assessOrientation,
+  calculateOrientationVector,
+  createRollingOrientationReadings,
+  formatTiltDirection
+} from "./orientationAveraging.js?v=20260902.2";
 
 const VALID_PERIODS = new Set(["day", "month", "custom"]);
 
 function finiteAxis(value, fieldName) {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < -90 || parsed > 90) {
-    throw new TypeError(`${fieldName} must be a finite value between -90 and 90 degrees.`);
+  if (!Number.isFinite(parsed) || parsed < -180 || parsed > 180) {
+    throw new TypeError(`${fieldName} must be a finite value between -180 and 180 degrees.`);
   }
   return parsed;
 }
@@ -121,39 +128,36 @@ export function filterTowerReadings(readings, filter = {}) {
   });
 }
 
-export function calculateResultantTilt(reading) {
+export function calculateResultantTilt(reading, options = {}) {
   if (!reading) {
     return 0;
   }
-  return Math.hypot(Number(reading.x) || 0, Number(reading.y) || 0, Number(reading.z) || 0);
+  return calculateOrientationVector(
+    { ...reading, timestamp: reading.timestamp ?? 0 },
+    options.calibration,
+    options.axisMapping
+  ).tiltDegrees;
 }
 
-export function calculateTiltDirection(reading) {
+export function calculateTiltDirection(reading, options = {}) {
   if (!reading) {
     return "No direction";
   }
-  const axes = [
-    { axis: "X", value: Number(reading.x) || 0 },
-    { axis: "Y", value: Number(reading.y) || 0 },
-    { axis: "Z", value: Number(reading.z) || 0 }
-  ];
-  const dominant = axes.reduce((current, axis) => (
-    Math.abs(axis.value) > Math.abs(current.value) ? axis : current
+  return formatTiltDirection(calculateOrientationVector(
+    { ...reading, timestamp: reading.timestamp ?? 0 },
+    options.calibration,
+    options.axisMapping
   ));
-  if (Math.abs(dominant.value) < 0.005) {
-    return "Near vertical";
-  }
-  return `Toward ${dominant.value >= 0 ? "+" : "−"}${dominant.axis}`;
 }
 
-export function getTowerSeverity(resultant, online = true) {
+export function getTowerSeverity(assessment, online = true) {
   if (!online) {
     return STATION_STATUS.OFFLINE;
   }
-  if (resultant >= WARNING_THRESHOLDS.alert) {
+  if (assessment?.level === "critical") {
     return STATION_STATUS.ALERT;
   }
-  if (resultant >= WARNING_THRESHOLDS.warning) {
+  if (assessment?.level === "warning") {
     return STATION_STATUS.WARNING;
   }
   return STATION_STATUS.NORMAL;
@@ -164,23 +168,40 @@ export function createTowerViewModel(station, readings, options = {}) {
     return null;
   }
   const safeReadings = Array.isArray(readings) ? readings : [];
+  const configuration = options.configuration || createAlertConfiguration(options.settings);
+  const averagedReadings = createRollingOrientationReadings(safeReadings, {
+    calibration: configuration.calibration,
+    windowSize: options.windowSize,
+    maximumGapMs: options.maximumGapMs
+  });
+  const visibleReadings = options.filter
+    ? filterTowerReadings(averagedReadings, options.filter)
+    : averagedReadings;
   const fallbackReading = options.fallbackToStation === false
     ? null
     : Object.freeze({
         stationId: station.id,
         x: Number(station.maxTilt) || 0,
         y: 0,
-        z: 0,
+        z: Number(station.maxTilt) || 0,
         timestamp: 0
       });
-  const latest = safeReadings.at(-1) || fallbackReading;
-  const resultant = calculateResultantTilt(latest);
+  const latest = visibleReadings.at(-1) || fallbackReading;
+  const orientationVector = latest
+    ? calculateOrientationVector(latest, configuration.calibration)
+    : null;
+  const assessment = latest
+    ? assessOrientation(latest, configuration.inclination, configuration.calibration)
+    : null;
+  const resultant = orientationVector?.tiltDegrees || 0;
 
   return Object.freeze({
     station,
     latest,
     resultant,
-    direction: calculateTiltDirection(latest),
-    status: getTowerSeverity(resultant, station.online)
+    orientationVector,
+    assessment,
+    direction: formatTiltDirection(orientationVector),
+    status: getTowerSeverity(assessment, Boolean(station.online && latest))
   });
 }

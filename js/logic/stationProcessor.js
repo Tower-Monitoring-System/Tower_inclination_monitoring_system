@@ -7,7 +7,7 @@ import {
   createDistributionData,
   createTrendData,
   isSensorReadingAnomalous
-} from "./tiltProcessor.js";
+} from "./tiltProcessor.js?v=20260902.2";
 import { countStationStatuses, createAlerts, getStationStatus } from "./warningProcessor.js";
 
 function parsePackets(rawPackets, factory, packetType, invalidPackets) {

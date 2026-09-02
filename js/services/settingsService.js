@@ -3,9 +3,9 @@ import {
   DEFAULT_SYSTEM_SETTINGS,
   createAlertConfiguration,
   mergeSystemSettings
-} from "../core/settingsDefaults.js?v=20260902.1";
+} from "../core/settingsDefaults.js?v=20260902.2";
 import { validateSystemSettings } from "../logic/settingsValidation.js?v=20260902.1";
-import { Esp32SettingsAdapter } from "./esp32SettingsAdapter.js?v=20260902.1";
+import { Esp32SettingsAdapter } from "./esp32SettingsAdapter.js?v=20260902.2";
 import { SettingsRepository } from "./settingsRepository.js";
 
 export class SettingsValidationError extends Error {

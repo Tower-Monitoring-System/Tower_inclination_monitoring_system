@@ -222,30 +222,30 @@
               </article>
 
               <article class="tower-summary-card axis-x" id="towerXCard">
-                <p>Current X Tilt</p>
+                <p>Average X Roll</p>
                 <strong id="towerCurrentX">—</strong>
-                <span>Tilt (degrees)</span>
+                <span>Roll (degrees)</span>
                 <i class="tower-metric-icon" aria-hidden="true">X</i>
               </article>
 
               <article class="tower-summary-card axis-y" id="towerYCard">
-                <p>Current Y Tilt</p>
+                <p>Average Y Pitch</p>
                 <strong id="towerCurrentY">—</strong>
-                <span>Tilt (degrees)</span>
+                <span>Pitch (degrees)</span>
                 <i class="tower-metric-icon" aria-hidden="true">Y</i>
               </article>
 
               <article class="tower-summary-card axis-z" id="towerZCard">
-                <p>Current Z Tilt</p>
+                <p>Average Z Structural Tilt</p>
                 <strong id="towerCurrentZ">—</strong>
-                <span>Tilt (degrees)</span>
+                <span>Node resultant (degrees)</span>
                 <i class="tower-metric-icon" aria-hidden="true">Z</i>
               </article>
 
               <article class="tower-summary-card resultant" id="towerResultantCard">
-                <p>Resultant Tilt</p>
+                <p>Average Physical Tilt</p>
                 <strong id="towerResultant">—</strong>
-                <span>Total (degrees)</span>
+                <span>From Roll / Pitch</span>
                 <i class="tower-metric-icon" aria-hidden="true">◎</i>
               </article>
             </section>
@@ -308,17 +308,17 @@
               <article class="tower-chart-card vector-card" aria-labelledby="towerVectorTitle">
                 <header class="tower-chart-header">
                   <div>
-                    <h2 id="towerVectorTitle">3-Axis Orientation (X, Y, Z)</h2>
+                    <h2 id="towerVectorTitle">Average 3-Axis Orientation (X, Y, Z)</h2>
                     <span id="towerLastReading">No sensor reading received yet</span>
                   </div>
-                  <span class="tower-chart-legend axis-legend"><i class="x"></i>X<i class="y"></i>Y<i class="z"></i>Z</span>
+                  <span class="tower-chart-legend axis-legend"><i class="x"></i>X Roll<i class="y"></i>Y Pitch<i class="z"></i>+Z reference</span>
                 </header>
                 <div class="tower-vector-layout">
                   <dl class="tower-axis-values">
-                    <div class="x"><dt>X (°)</dt><dd id="towerVectorX">—</dd></div>
-                    <div class="y"><dt>Y (°)</dt><dd id="towerVectorY">—</dd></div>
-                    <div class="z"><dt>Z (°)</dt><dd id="towerVectorZ">—</dd></div>
-                    <div class="total"><dt>Resultant</dt><dd id="towerVectorResultant">—</dd></div>
+                    <div class="x"><dt>Avg X · Roll (°)</dt><dd id="towerVectorX">—</dd></div>
+                    <div class="y"><dt>Avg Y · Pitch (°)</dt><dd id="towerVectorY">—</dd></div>
+                    <div class="z"><dt>Avg Z · Structural (°)</dt><dd id="towerVectorZ">—</dd></div>
+                    <div class="total"><dt>Physical tilt</dt><dd id="towerVectorResultant">—</dd></div>
                   </dl>
                   <div class="tower-canvas-wrap tower-vector-wrap">
                     <canvas
@@ -335,7 +335,7 @@
                     <div><dt>Direction</dt><dd id="towerDirection">No direction</dd></div>
                     <div><dt>Tilt Angle</dt><dd id="towerAngle">—</dd></div>
                     <div><dt>Tilt Status</dt><dd class="tower-tilt-assessment offline" id="towerTiltAssessment">Unavailable</dd></div>
-                    <small><i></i>Solid vector: current position<br /><b></b>Dashed line: ideal vertical<br /></small>
+                    <small><i></i>Solid vector: current averaged orientation<br /><b></b>Dashed line: initial reference<br /></small>
                   </dl>
                 </div>
               </article>
@@ -575,17 +575,17 @@
                 </div>
                 <div class="settings-axis-grid">
                   <label class="settings-field">
-                    <span>Initial X Tilt (°)</span>
+                    <span>Initial X Roll (°)</span>
                     <input type="number" step="0.01" data-setting-group="calibration" data-setting-path="calibration.x" />
                     <small data-settings-error="calibration.x" hidden></small>
                   </label>
                   <label class="settings-field">
-                    <span>Initial Y Tilt (°)</span>
+                    <span>Initial Y Pitch (°)</span>
                     <input type="number" step="0.01" data-setting-group="calibration" data-setting-path="calibration.y" />
                     <small data-settings-error="calibration.y" hidden></small>
                   </label>
                   <label class="settings-field">
-                    <span>Initial Z Tilt (°)</span>
+                    <span>Initial Z Structural Tilt (°)</span>
                     <input type="number" step="0.01" data-setting-group="calibration" data-setting-path="calibration.z" />
                     <small data-settings-error="calibration.z" hidden></small>
                   </label>
@@ -599,17 +599,17 @@
                 </div>
                 <div class="settings-axis-grid">
                   <label class="settings-field">
-                    <span>X Tilt Threshold (°)</span>
+                    <span>X Roll Threshold (°)</span>
                     <input type="number" step="0.1" data-setting-group="tiltThresholds" data-setting-path="tiltThresholds.x" />
                     <small data-settings-error="tiltThresholds.x" hidden></small>
                   </label>
                   <label class="settings-field">
-                    <span>Y Tilt Threshold (°)</span>
+                    <span>Y Pitch Threshold (°)</span>
                     <input type="number" step="0.1" data-setting-group="tiltThresholds" data-setting-path="tiltThresholds.y" />
                     <small data-settings-error="tiltThresholds.y" hidden></small>
                   </label>
                   <label class="settings-field">
-                    <span>Z Tilt Threshold (°)</span>
+                    <span>Z Structural Tilt Threshold (°)</span>
                     <input type="number" step="0.1" data-setting-group="tiltThresholds" data-setting-path="tiltThresholds.z" />
                     <small data-settings-error="tiltThresholds.z" hidden></small>
                   </label>
@@ -731,6 +731,6 @@
     <span id="dashboardToastMessage"></span>
   </div>
 
-  <script type="module" src="./js/app.js?v=20260902.1"></script>
+  <script type="module" src="./js/app.js?v=20260902.3"></script>
 </body>
 </html>

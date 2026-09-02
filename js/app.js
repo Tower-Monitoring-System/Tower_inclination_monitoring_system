@@ -5,18 +5,18 @@ import {
   DASHBOARD_ACTION
 } from "./core/constants.js";
 import { createStore } from "./core/store.js";
-import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js";
+import { processDashboardPayload, processSensorPacket } from "./logic/stationProcessor.js?v=20260902.2";
 import { AlertsPage } from "./pages/alertsPage.js?v=20260902.1";
 import { ListPage } from "./pages/listPage.js?v=20260902.1";
 import { SettingsPage } from "./pages/settingsPage.js?v=20260902.1";
-import { TowersPage } from "./pages/towersPage.js?v=20260901.3";
-import { AlertService } from "./services/alertService.js?v=20260902.1";
+import { TowersPage } from "./pages/towersPage.js?v=20260902.3";
+import { AlertService } from "./services/alertService.js?v=20260902.2";
 import { ApiService } from "./services/apiService.js";
 import { AuthService } from "./services/authService.js?v=20260901.1";
-import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260902.1";
+import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260902.2";
 import { MqttService } from "./services/mqttService.js?v=20260823.8";
 import { SensorDataService } from "./services/sensorDataService.js?v=20260901.1";
-import { SettingsService } from "./services/settingsService.js?v=20260902.1";
+import { SettingsService } from "./services/settingsService.js?v=20260902.2";
 import { TowerHistoryService } from "./services/towerHistoryService.js?v=20260824.2";
 import { TowerRegistryService } from "./services/towerRegistryService.js?v=20260824.1";
 
@@ -257,7 +257,11 @@ async function bootstrap() {
     dashboard = new Dashboard(store.asReadonly());
     settingsService = new SettingsService({
       adapter: new Esp32SettingsAdapter({
-        sensorProvider: () => store.getState().sensorData.at(-1) || null
+        sensorProvider: () => (
+          towersPage?.getSelectedTowerLatestReading()
+          || store.getState().sensorData.at(-1)
+          || null
+        )
       })
     });
     await settingsService.initialize();
@@ -280,7 +284,8 @@ async function bootstrap() {
     towersPage = new TowersPage(store.asReadonly(), {
       onToast: (message, type) => dashboard.showToast(message, type),
       historyService: new TowerHistoryService(new SensorDataService()),
-      towerRegistryService
+      towerRegistryService,
+      settingsService
     });
     settingsPage = new SettingsPage(settingsService, {
       onToast: (message, type) => dashboard.showToast(message, type),

@@ -1,6 +1,6 @@
 import { TowerTrendChart } from "../components/TowerTrendChart.js?v=20260824.3";
-import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260901.3";
-import { TOWERS_CONFIG } from "../core/config.js?v=20260824.2";
+import { TowerVectorChart } from "../components/TowerVectorChart.js?v=20260902.3";
+import { TOWERS_CONFIG } from "../core/config.js?v=20260902.2";
 import {
   createTowerViewModel,
   filterTowerReadings,
@@ -8,7 +8,7 @@ import {
   mergeTowerReadings,
   normalizeTowerReading,
   shiftLocalDate
-} from "../logic/towerMonitoringProcessor.js?v=20260824.3";
+} from "../logic/towerMonitoringProcessor.js?v=20260902.2";
 
 const STATUS_LABELS = Object.freeze({
   normal: "Stable",
@@ -36,6 +36,7 @@ export class TowersPage {
     this.onToast = typeof options.onToast === "function" ? options.onToast : () => {};
     this.historyService = options.historyService || null;
     this.towerRegistry = options.towerRegistryService || null;
+    this.settingsService = options.settingsService || null;
     this.abortController = new AbortController();
     this.state = readonlyStore.getState();
     this.registryState = this.towerRegistry?.getState() || { towers: [], initialized: true, error: null };
@@ -65,6 +66,10 @@ export class TowersPage {
     this.unsubscribeStore = this.store.subscribe((state) => this.ingestState(state));
     this.unsubscribeRegistry = this.towerRegistry?.subscribe(
       (state) => this.handleRegistryState(state),
+      { immediate: false }
+    );
+    this.unsubscribeSettings = this.settingsService?.subscribe(
+      () => this.render(),
       { immediate: false }
     );
     this.syncRegisteredTowers();
@@ -389,14 +394,36 @@ export class TowersPage {
     return this.historyByTower.get(this.selectedTowerId) || [];
   }
 
-  filteredReadings() {
-    return filterTowerReadings(this.currentReadings(), {
+  activeFilter() {
+    return {
       period: this.period,
       day: this.day,
       month: this.month,
       startDate: this.customStart,
       endDate: this.customEnd
-    });
+    };
+  }
+
+  filteredReadings() {
+    return filterTowerReadings(this.currentReadings(), this.activeFilter());
+  }
+
+  getSelectedTowerId() {
+    return this.selectedTowerId;
+  }
+
+  getSelectedTowerLatestReading() {
+    const historical = this.currentReadings().at(-1) || null;
+    const live = [...(this.state.sensorData || [])]
+      .reverse()
+      .find((reading) => reading.stationId === this.selectedTowerId) || null;
+    if (!historical) {
+      return live;
+    }
+    if (!live) {
+      return historical;
+    }
+    return Number(live.timestamp) >= Number(historical.timestamp) ? live : historical;
   }
 
   open() {
@@ -424,7 +451,11 @@ export class TowersPage {
     this.renderFilters();
     this.renderError(stations.length);
     const filteredReadings = this.filteredReadings();
-    const viewModel = createTowerViewModel(this.currentStation(), filteredReadings, { fallbackToStation: false });
+    const viewModel = createTowerViewModel(this.currentStation(), this.currentReadings(), {
+      fallbackToStation: false,
+      filter: this.activeFilter(),
+      configuration: this.settingsService?.getAlertConfiguration()
+    });
     this.renderMetrics(viewModel);
     this.renderVectorValues(viewModel);
     const loading = Boolean(
@@ -515,15 +546,17 @@ export class TowersPage {
     this.elements.yValue.textContent = latest ? `${latest.y.toFixed(2)}°` : "—";
     this.elements.zValue.textContent = latest ? `${latest.z.toFixed(2)}°` : "—";
     this.elements.resultantValue.textContent = latest ? `${viewModel.resultant.toFixed(2)}°` : "—";
-    this.setMetricSeverity(this.elements.xCard, latest ? Math.abs(latest.x) : 0);
-    this.setMetricSeverity(this.elements.yCard, latest ? Math.abs(latest.y) : 0);
-    this.setMetricSeverity(this.elements.zCard, latest ? Math.abs(latest.z) : 0);
-    this.setMetricSeverity(this.elements.resultantCard, viewModel?.resultant || 0);
+    this.setMetricSeverity(this.elements.xCard, viewModel?.assessment?.ratios.x, viewModel?.assessment?.criticalMultiplier);
+    this.setMetricSeverity(this.elements.yCard, viewModel?.assessment?.ratios.y, viewModel?.assessment?.criticalMultiplier);
+    this.setMetricSeverity(this.elements.zCard, viewModel?.assessment?.ratios.z, viewModel?.assessment?.criticalMultiplier);
+    this.setMetricSeverity(this.elements.resultantCard, viewModel?.assessment?.maximumRatio, viewModel?.assessment?.criticalMultiplier);
   }
 
-  setMetricSeverity(card, value) {
-    card.classList.toggle("is-warning", value >= 0.7 && value < 1);
-    card.classList.toggle("is-alert", value >= 1);
+  setMetricSeverity(card, ratio = 0, criticalMultiplier = 1.5) {
+    const value = Number(ratio) || 0;
+    const critical = Number(criticalMultiplier) || 1.5;
+    card.classList.toggle("is-warning", value >= 1 && value < critical);
+    card.classList.toggle("is-alert", value >= critical);
   }
 
   renderVectorValues(viewModel) {
@@ -540,7 +573,7 @@ export class TowersPage {
       ? (STATUS_LABELS[status] || "Unavailable")
       : "Unavailable";
     this.elements.lastReading.textContent = latest?.timestamp
-      ? `Last reading ${READING_TIME.format(new Date(latest.timestamp))}`
+      ? `Latest sample ${READING_TIME.format(new Date(latest.timestamp))} · average of ${latest.averageSampleCount || 1}`
       : "No sensor reading received yet";
   }
 
@@ -558,6 +591,7 @@ export class TowersPage {
     this.abortController.abort();
     this.unsubscribeStore?.();
     this.unsubscribeRegistry?.();
+    this.unsubscribeSettings?.();
     this.trendChart.destroy();
     this.vectorChart.destroy();
     this.historyService?.destroy();

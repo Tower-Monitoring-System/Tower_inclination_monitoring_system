@@ -5,6 +5,7 @@ import {
   RANGE_DEFINITIONS,
   WARNING_THRESHOLDS
 } from "../core/constants.js";
+import { calculateOrientationVector } from "./orientationAveraging.js?v=20260902.2";
 
 export function clamp(value, minimum, maximum) {
   return Math.min(maximum, Math.max(minimum, value));
@@ -19,7 +20,7 @@ export function calculateTilt(tiltX, tiltY, tiltZ = 0) {
     throw new TypeError("Tilt axes must be finite numbers.");
   }
 
-  return Math.hypot(x, y, z);
+  return calculateOrientationVector({ x, y, z, timestamp: 0 }).tiltDegrees;
 }
 
 export function normalizeTilt(value, minimum = 0, maximum = 90) {

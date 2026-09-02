@@ -1,4 +1,4 @@
-import { CHART_CONSTANTS, WARNING_THRESHOLDS } from "../core/constants.js";
+import { CHART_CONSTANTS } from "../core/constants.js";
 
 const COLORS = Object.freeze({
   x: "#176ff2",
@@ -9,7 +9,7 @@ const COLORS = Object.freeze({
 });
 
 const VIEW = Object.freeze({
-  defaultAzimuth: 35,
+  defaultAzimuth: 325,
   keyboardStep: 5,
   buttonStep: 15,
   fullRotation: 360,
@@ -22,8 +22,9 @@ const VIEW = Object.freeze({
 
 function viewModelSignature(viewModel) {
   const latest = viewModel?.latest;
+  const vector = viewModel?.orientationVector;
   return latest
-    ? `${latest.timestamp}|${latest.x}|${latest.y}|${latest.z}|${viewModel.resultant}|${viewModel.status}`
+    ? `${latest.timestamp}|${latest.x}|${latest.y}|${latest.z}|${latest.averageSampleCount}|${vector?.x}|${vector?.y}|${vector?.z}|${viewModel.resultant}|${viewModel.status}`
     : "empty";
 }
 
@@ -56,11 +57,11 @@ function visualTiltDegrees(actualTilt) {
   return Math.min(70, actualTilt);
 }
 
-function statusColor(total) {
-  if (total >= WARNING_THRESHOLDS.alert) {
+function statusColor(status) {
+  if (status === "alert") {
     return "#d92e46";
   }
-  if (total >= WARNING_THRESHOLDS.warning) {
+  if (status === "warning") {
     return "#e7860b";
   }
   return COLORS.z;
@@ -161,7 +162,7 @@ export class TowerVectorChart {
     const zoom = Math.round(this.zoomLevel * 100);
     this.canvas.setAttribute(
       "aria-label",
-      `Interactive three-axis orientation for the selected ${this.period} period. Tilt ${tilt}. View ${angle} degrees around Z. Zoom ${zoom} percent. Drag horizontally to rotate. Use the mouse wheel to zoom in or out.`
+      `Interactive averaged three-axis orientation for the selected ${this.period} period. Physical tilt ${tilt}. View ${angle} degrees around Z. Zoom ${zoom} percent. Drag horizontally to rotate the camera. Use the mouse wheel to zoom in or out.`
     );
   }
 
@@ -288,8 +289,8 @@ export class TowerVectorChart {
   }
 
   drawScene(context, width, height) {
-    const reading = this.viewModel.latest;
-    const total = clamp(Number(this.viewModel.resultant) || 0, 0, 89.5);
+    const vector = this.viewModel.orientationVector;
+    const total = Math.max(0, Number(this.viewModel.resultant) || 0);
     const origin = { x: width * 0.5, y: height * 0.76 };
     const baseGroundScale = Math.max(74, Math.min(width * 0.33, height * 0.34, 176));
     const baseVerticalScale = Math.max(142, Math.min(width * 0.48, height * 0.58, 248));
@@ -308,11 +309,9 @@ export class TowerVectorChart {
     const idealEnd = project({ z: 1 });
     this.drawIdealVertical(context, origin, idealEnd);
 
-    const planarMagnitude = Math.hypot(reading.x, reading.y);
-    const sensorDirection = planarMagnitude > 0.0001
-      ? Math.atan2(reading.y, reading.x)
+    const directionAzimuth = Number.isFinite(vector?.azimuthRadians)
+      ? vector.azimuthRadians
       : 0;
-    const directionAzimuth = sensorDirection + toRadians(reading.z);
     const displayedTilt = toRadians(visualTiltDegrees(total));
     const horizontal = Math.sin(displayedTilt);
     const actualWorld = {
@@ -323,7 +322,7 @@ export class TowerVectorChart {
     const actualGround = { x: actualWorld.x, y: actualWorld.y, z: 0 };
     const actualEnd = project(actualWorld);
     const groundEnd = project(actualGround);
-    const vectorColor = statusColor(total);
+    const vectorColor = statusColor(this.viewModel.status);
 
     if (total >= 0.05) {
       this.drawDirectionGuide(context, origin, project, directionAzimuth, vectorColor);
@@ -429,7 +428,7 @@ export class TowerVectorChart {
     context.fill();
     context.font = '700 10px Inter, "Segoe UI", sans-serif';
     context.textAlign = "left";
-    context.fillText("Ideal vertical (+Z)", idealEnd.x + 8, idealEnd.y + 4);
+    context.fillText("Initial reference (+Z)", idealEnd.x + 8, idealEnd.y + 4);
     context.restore();
   }
 
@@ -575,7 +574,7 @@ export class TowerVectorChart {
   }
 
   drawTiltTag(context, width, height, actualEnd, color) {
-    const text = `Tilt ${this.viewModel.resultant.toFixed(2)}°`;
+    const text = `Avg tilt ${this.viewModel.resultant.toFixed(2)}°`;
     context.save();
     context.font = '800 10px Inter, "Segoe UI", sans-serif';
     const tagWidth = Math.ceil(context.measureText(text).width) + 16;

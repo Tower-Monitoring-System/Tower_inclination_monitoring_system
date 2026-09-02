@@ -7,7 +7,7 @@ export const SETTINGS_LIMITS = Object.freeze({
 
 export const DEFAULT_SYSTEM_SETTINGS = Object.freeze({
   calibration: Object.freeze({ x: 0, y: 0, z: 0 }),
-  tiltThresholds: Object.freeze({ x: 10, y: 10, z: 10 }),
+  tiltThresholds: Object.freeze({ x: 0.5, y: 0.5, z: 0.5 }),
   battery: Object.freeze({ minimumVoltage: SETTINGS_LIMITS.battery.nominal }),
   wifi: Object.freeze({
     ssid: "",

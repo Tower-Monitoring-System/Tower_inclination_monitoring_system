@@ -47,3 +47,12 @@ export const ALERT_CONFIG = Object.freeze({
 export const TOWERS_CONFIG = Object.freeze({
   maximumHistoryPointsPerTower: SENSOR_DATA_CONFIG.maximumRecords
 });
+
+export const ORIENTATION_CONFIG = Object.freeze({
+  averageWindowSize: 3,
+  maximumWindowGapMs: 90 * 60 * 1000,
+  axisMapping: Object.freeze({
+    rollSign: 1,
+    pitchSign: 1
+  })
+});

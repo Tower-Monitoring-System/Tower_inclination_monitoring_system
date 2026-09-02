@@ -1,5 +1,5 @@
 import { ALERT_CONFIG } from "../core/config.js";
-import { createAlertsFromReadings, summarizeAlerts } from "../logic/alertProcessor.js?v=20260902.1";
+import { createAlertsFromReadings, summarizeAlerts } from "../logic/alertProcessor.js?v=20260902.2";
 
 export class AlertService {
   constructor(sensorDataService, options = {}) {

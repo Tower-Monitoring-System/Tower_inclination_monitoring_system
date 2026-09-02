@@ -3,7 +3,15 @@ import {
   ALERT_STATUS,
   ALERT_TYPE
 } from "../core/constants.js";
-import { createAlertConfiguration } from "../core/settingsDefaults.js?v=20260902.1";
+import { createAlertConfiguration } from "../core/settingsDefaults.js?v=20260902.2";
+import {
+  assessOrientation,
+  calculateOrientationVector,
+  calculateTiltComponents,
+  createRollingOrientationReadings
+} from "./orientationAveraging.js?v=20260902.2";
+
+export { calculateTiltComponents };
 
 const VALID_TYPES = new Set(["all", ...Object.values(ALERT_TYPE)]);
 const VALID_SEVERITIES = new Set(["all", ...Object.values(ALERT_SEVERITY)]);
@@ -37,58 +45,20 @@ function batterySeverity(voltage, thresholds) {
 }
 
 export function calculateInclinationDegrees(reading) {
-  const x = Number(reading?.x);
-  const y = Number(reading?.y);
-  const z = Number(reading?.z);
-  if (![x, y, z].every(Number.isFinite)) {
-    throw new TypeError("Inclination requires finite X, Y, and Z values.");
-  }
-
-  const horizontalMagnitude = Math.hypot(x, z);
-  if (horizontalMagnitude === 0 && y === 0) {
-    return 0;
-  }
-  return Math.atan2(horizontalMagnitude, Math.abs(y)) * (180 / Math.PI);
-}
-
-export function calculateTiltComponents(reading, calibration = {}) {
-  const x = Number(reading?.x);
-  const y = Number(reading?.y);
-  const z = Number(reading?.z);
-  if (![x, y, z].every(Number.isFinite)) {
-    throw new TypeError("Tilt components require finite X, Y, and Z values.");
-  }
-
-  const normalizedY = Math.abs(y) > 45 ? 90 - Math.abs(y) : y;
-  return Object.freeze({
-    x: Math.abs(x - (Number(calibration.x) || 0)),
-    y: Math.abs(normalizedY - (Number(calibration.y) || 0)),
-    z: Math.abs(z - (Number(calibration.z) || 0))
-  });
+  return calculateOrientationVector(
+    { ...reading, timestamp: reading?.timestamp ?? 0 }
+  ).tiltDegrees;
 }
 
 function inclinationMeasurement(reading, thresholds, calibration) {
-  const components = calculateTiltComponents(reading, calibration);
-  const criticalMultiplier = Number(thresholds.criticalMultiplier) || 1.5;
-  const ranked = ["x", "y", "z"]
-    .map((axis) => {
-      const threshold = Number(thresholds[axis]);
-      return {
-        axis,
-        value: components[axis],
-        threshold,
-        ratio: threshold > 0 ? components[axis] / threshold : 0
-      };
-    })
-    .sort((left, right) => right.ratio - left.ratio);
-  const highest = ranked[0];
+  const assessment = assessOrientation(reading, thresholds, calibration);
   return Object.freeze({
-    axis: highest.axis,
-    value: highest.value,
-    threshold: highest.threshold,
-    severity: highest.ratio >= criticalMultiplier
+    axis: assessment.axis,
+    value: assessment.value,
+    threshold: assessment.threshold,
+    severity: assessment.level === "critical"
       ? ALERT_SEVERITY.CRITICAL
-      : highest.ratio >= 1
+      : assessment.level === "warning"
         ? ALERT_SEVERITY.WARNING
         : null
   });
@@ -172,7 +142,12 @@ export function createAlertsFromReadings(readings, options = {}) {
   const openAlerts = new Map();
   const alerts = [];
 
-  uniqueChronologicalReadings(readings).forEach((reading) => {
+  const averagedReadings = createRollingOrientationReadings(
+    uniqueChronologicalReadings(readings),
+    { calibration: configuration.calibration }
+  );
+
+  averagedReadings.forEach((reading) => {
     const towerId = typeof reading.towerId === "string" && reading.towerId.trim()
       ? reading.towerId.trim()
       : defaultTowerId;
