@@ -36,12 +36,7 @@ Tower_inclination_monitoring_system/
 │   │   ├── constants.js
 │   │   └── settingsDefaults.js
 │   │
-│   ├── models/
-│   │   ├── Station.js
-│   │   └── SensorData.js
-│   │
 │   ├── services/
-│   │   ├── apiService.js
 │   │   ├── supabaseClient.js
 │   │   ├── mqttService.js
 │   │   ├── authService.js
@@ -55,11 +50,9 @@ Tower_inclination_monitoring_system/
 │   │   └── towerRegistryService.js
 │   │
 │   ├── logic/
-│   │   ├── tiltProcessor.js
-│   │   ├── warningProcessor.js
-│   │   ├── stationProcessor.js
 │   │   ├── sensorDataProcessor.js
 │   │   ├── alertProcessor.js
+│   │   ├── orientationAveraging.js
 │   │   ├── settingsValidation.js
 │   │   ├── towerMonitoringProcessor.js
 │   │   └── towerRegistryValidation.js
@@ -75,10 +68,8 @@ Tower_inclination_monitoring_system/
 │   │
 │   └── components/
 │       ├── Dashboard.js
-│       ├── TiltChart.js
 │       ├── TowerTrendChart.js
 │       ├── TowerVectorChart.js
-│       ├── StationCard.js
 │       └── AlertPanel.js
 │
 ├── supabase/
@@ -109,11 +100,13 @@ See `SUPABASE_SETUP.md` for setup and deployment instructions.
 
 The List page reads validated Google Sheets data through an authenticated Supabase Edge Function. It supports Day/Month/Custom date-range filtering, Date/Time sorting, pagination, resilient polling, battery warnings, and native `.xlsx` export.
 
+Production sensor data is never generated in the browser. Towers, List, and Alerts use the authenticated `sensor-data` Edge Function and the matching Google Sheet tab from the Tower Registry. MQTT, when enabled, acts as a refresh signal for those real data sources.
+
 See `SENSOR_DATA_SETUP.md` for the complete Google Sheets, Apps Script, and Supabase deployment guide.
 
 ## Alerts
 
-The Alerts page derives battery and tower-inclination events from the same authenticated sensor-data feed. Consecutive readings that violate the same rule remain one event; a safe reading resolves that event, and a later violation starts a new event. No sample alert records are embedded in the frontend.
+The Alerts page derives battery and tower-inclination events from the same authenticated sensor-data feed. Inclination uses a three-sample rolling average, resets its window after a gap over 90 minutes, and compares X/Y/Z deviations with the shared calibration and thresholds. Consecutive readings that violate the same rule remain one event; a safe reading resolves that event, and a later violation starts a new event. No sample alert records are embedded in the frontend.
 
 Applied battery and per-axis inclination thresholds come from the shared System Settings service. The polling interval, page size, history limit, and fallback tower ID are in `js/core/config.js` under `ALERT_CONFIG`. Change `sourceTowerId` when the Google Sheet represents a different tower.
 
@@ -125,4 +118,4 @@ The System Settings page manages MPU6050 calibration, X/Y/Z alert thresholds, th
 
 The Towers page builds Select Tower only from the shared Tower Registry. Selecting a Tower forwards its ID through `TowerHistoryService`, the authenticated Supabase Edge Function, and Google Apps Script so the matching Sheet tab is read dynamically. No sample Tower is inserted into the selector.
 
-Day/Month/Custom filtering is applied once and shared by the current X/Y/Z/resultant/battery values, the interactive X/Y trend, and the 3-axis orientation view. `TOWERS_CONFIG.maximumHistoryPointsPerTower` bounds retained history, while switching or deleting a Tower cancels stale requests and prevents readings from being mixed across Tower IDs.
+Day/Month/Custom filtering is applied once and shared by the averaged X/Y/Z/resultant/battery values, the interactive X/Y trend, and the 3-axis orientation view. Towers and Alerts share `orientationAveraging.js` and `SettingsService`, so the same samples and settings produce the same Normal/Warning/Critical result. `TOWERS_CONFIG.maximumHistoryPointsPerTower` bounds retained history, while switching or deleting a Tower cancels stale requests and prevents readings from being mixed across Tower IDs.

@@ -1,5 +1,8 @@
 import { CHART_CONSTANTS } from "../core/constants.js";
-import { clamp } from "../logic/tiltProcessor.js";
+
+function clamp(value, minimum, maximum) {
+  return Math.min(maximum, Math.max(minimum, value));
+}
 
 const AXES = Object.freeze([
   Object.freeze({ key: "x", label: "X Tilt", color: "#176ff2" }),

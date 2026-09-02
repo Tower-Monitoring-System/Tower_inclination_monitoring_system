@@ -3,34 +3,12 @@ import {
   mergeSystemSettings
 } from "../core/settingsDefaults.js?v=20260902.2";
 
-const MOCK_DEVICE_SETTINGS = Object.freeze({
-  calibration: Object.freeze({ x: 0.64, y: 0, z: 0 }),
-  tiltThresholds: Object.freeze({ x: 0.5, y: 0.5, z: 0.5 }),
-  battery: DEFAULT_SYSTEM_SETTINGS.battery,
-  wifi: Object.freeze({
-    ssid: "TowerNet_5G",
-    password: "tower-net",
-    ipMode: "dhcp",
-    staticIp: "192.168.1.125",
-    gateway: "192.168.1.1",
-    subnetMask: "255.255.255.0",
-    autoReconnect: true,
-    connectionStatus: "connected"
-  }),
-  accessPoint: Object.freeze({
-    status: "broadcasting",
-    ssid: "ESP32-Config-7A3B",
-    password: "esp32setup",
-    connectionStatus: "disconnected"
-  })
-});
-
 export class Esp32SettingsAdapter {
   constructor(options = {}) {
     this.window = options.windowRef || window;
     this.sensorProvider = typeof options.sensorProvider === "function" ? options.sensorProvider : () => null;
     this.latencyMs = Number(options.latencyMs) || 180;
-    this.settings = mergeSystemSettings(MOCK_DEVICE_SETTINGS);
+    this.settings = mergeSystemSettings(DEFAULT_SYSTEM_SETTINGS, options.initialSettings);
   }
 
   delay() {
@@ -50,11 +28,20 @@ export class Esp32SettingsAdapter {
 
   async readCurrentTilt() {
     await this.delay();
-    const reading = this.sensorProvider() || {};
+    const reading = this.sensorProvider();
+    if (!reading) {
+      throw new Error("No validated reading is available for the selected tower.");
+    }
+    const values = {
+      x: Number(reading.tiltX ?? reading.x),
+      y: Number(reading.tiltY ?? reading.y),
+      z: Number(reading.tiltZ ?? reading.z)
+    };
+    if (!Object.values(values).every(Number.isFinite)) {
+      throw new TypeError("The selected tower does not have valid X, Y, and Z telemetry.");
+    }
     return Object.freeze({
-      x: Number(reading.tiltX ?? reading.x ?? this.settings.calibration.x),
-      y: Number(reading.tiltY ?? reading.y ?? this.settings.calibration.y),
-      z: Number(reading.tiltZ ?? reading.z ?? this.settings.calibration.z)
+      ...values
     });
   }
 

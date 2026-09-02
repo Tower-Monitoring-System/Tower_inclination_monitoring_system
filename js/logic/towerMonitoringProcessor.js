@@ -177,16 +177,7 @@ export function createTowerViewModel(station, readings, options = {}) {
   const visibleReadings = options.filter
     ? filterTowerReadings(averagedReadings, options.filter)
     : averagedReadings;
-  const fallbackReading = options.fallbackToStation === false
-    ? null
-    : Object.freeze({
-        stationId: station.id,
-        x: Number(station.maxTilt) || 0,
-        y: 0,
-        z: Number(station.maxTilt) || 0,
-        timestamp: 0
-      });
-  const latest = visibleReadings.at(-1) || fallbackReading;
+  const latest = visibleReadings.at(-1) || null;
   const orientationVector = latest
     ? calculateOrientationVector(latest, configuration.calibration)
     : null;

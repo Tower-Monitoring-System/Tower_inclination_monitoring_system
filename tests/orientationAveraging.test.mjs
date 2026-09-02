@@ -9,8 +9,8 @@ import {
   formatTiltDirection
 } from "../js/logic/orientationAveraging.js";
 import { createAlertsFromReadings } from "../js/logic/alertProcessor.js";
-import { calculateTilt } from "../js/logic/tiltProcessor.js";
 import { createTowerViewModel } from "../js/logic/towerMonitoringProcessor.js";
+import { Esp32SettingsAdapter } from "../js/services/esp32SettingsAdapter.js";
 import { SettingsRepository } from "../js/services/settingsRepository.js";
 
 const HOUR = 60 * 60 * 1000;
@@ -41,6 +41,18 @@ test("0.55 degree X delta produces an X warning", () => {
   const result = assessOrientation(reading(0.55, 0, 0), THRESHOLDS, CALIBRATION);
   assert.equal(result.level, "warning");
   assert.equal(result.axis, "x");
+});
+
+test("exactly 0.50 degree delta enters warning at Rmax 1", () => {
+  const result = assessOrientation(reading(0.5, 0, 0), THRESHOLDS, CALIBRATION);
+  assert.equal(result.level, "warning");
+  assert.ok(Math.abs(result.maximumRatio - 1) < 1e-12);
+});
+
+test("exactly 0.75 degree delta enters critical at Rmax 1.5", () => {
+  const result = assessOrientation(reading(0.75, 0, 0), THRESHOLDS, CALIBRATION);
+  assert.equal(result.level, "critical");
+  assert.ok(Math.abs(result.maximumRatio - 1.5) < 1e-12);
 });
 
 test("0.80 degree X delta is critical because Rmax is 1.6", () => {
@@ -91,6 +103,11 @@ test("positive Pitch tilts the vector toward positive X", () => {
   assert.equal(formatTiltDirection(vector), "Toward +X");
 });
 
+test("negative Roll and Pitch preserve the opposite two mounting directions", () => {
+  assert.equal(formatTiltDirection(calculateOrientationVector(reading(-5, 0, 5))), "Toward +Y");
+  assert.equal(formatTiltDirection(calculateOrientationVector(reading(0, -5, 5))), "Toward −X");
+});
+
 test("changing structural Z does not rotate or alter the physical vector", () => {
   const first = calculateOrientationVector(reading(4, -3, 0));
   const second = calculateOrientationVector(reading(4, -3, 80));
@@ -104,7 +121,6 @@ test("physical resultant is derived from Roll and Pitch, not hypot(X,Y,Z)", () =
   const vector = calculateOrientationVector(reading(3, 4, 5));
   assert.ok(Math.abs(vector.tiltDegrees - Math.hypot(3, 4, 5)) > 1);
   assert.ok(Math.abs(vector.tiltDegrees - 5) < 0.01);
-  assert.ok(Math.abs(calculateTilt(3, 4, 5) - 5) < 0.01);
 });
 
 test("saved calibration and thresholds survive a repository reload", () => {
@@ -138,6 +154,38 @@ test("Towers and Alerts use the same three-sample average and thresholds", () =>
   assert.equal(alert?.severity, ALERT_SEVERITY.WARNING);
 });
 
+test("a new Settings configuration immediately changes Towers and Alerts together", () => {
+  const values = [0.6, 0.6, 0.6].map((value, index) => reading(value, 0, 0, index * HOUR));
+  const station = { id: "TWR-001", online: true };
+  const normalConfiguration = {
+    ...CONFIGURATION,
+    inclination: { ...THRESHOLDS, x: 1 }
+  };
+  const recalibratedConfiguration = {
+    ...CONFIGURATION,
+    calibration: { x: 0.6, y: 0, z: 0 }
+  };
+  const normal = createTowerViewModel(station, values, { configuration: normalConfiguration });
+  const warning = createTowerViewModel(station, values, { configuration: CONFIGURATION });
+  const recalibrated = createTowerViewModel(station, values, {
+    configuration: recalibratedConfiguration
+  });
+  const normalAlerts = createAlertsFromReadings(values, { configuration: normalConfiguration });
+  const warningAlerts = createAlertsFromReadings(values, { configuration: CONFIGURATION });
+  const recalibratedAlerts = createAlertsFromReadings(values, {
+    configuration: recalibratedConfiguration
+  });
+  assert.equal(normal.assessment.level, "normal");
+  assert.equal(warning.assessment.level, "warning");
+  assert.equal(recalibrated.assessment.level, "normal");
+  assert.equal(normalAlerts.some((item) => item.type === ALERT_TYPE.INCLINATION), false);
+  assert.equal(
+    warningAlerts.find((item) => item.type === ALERT_TYPE.INCLINATION)?.severity,
+    ALERT_SEVERITY.WARNING
+  );
+  assert.equal(recalibratedAlerts.some((item) => item.type === ALERT_TYPE.INCLINATION), false);
+});
+
 test("a gap over 90 minutes starts a new progressive-average segment", () => {
   const averaged = createRollingOrientationReadings([
     reading(0.1, 0, 0.1, 0),
@@ -167,4 +215,27 @@ test("invalid orientation rows are excluded from the average", () => {
   assert.equal(averaged.length, 2);
   assert.equal(averaged.at(-1).averageSampleCount, 1);
   assert.ok(Math.abs(averaged.at(-1).x - 0.4) < 1e-12);
+});
+
+test("calibration reads validated telemetry and never falls back to mock orientation", async () => {
+  const browserWindow = { setTimeout, clearTimeout, console };
+  const unavailable = new Esp32SettingsAdapter({
+    windowRef: browserWindow,
+    latencyMs: 1,
+    sensorProvider: () => null
+  });
+  await assert.rejects(
+    unavailable.readCurrentTilt(),
+    /No validated reading is available/
+  );
+
+  const available = new Esp32SettingsAdapter({
+    windowRef: browserWindow,
+    latencyMs: 1,
+    sensorProvider: () => ({ tiltX: 1.2, tiltY: -0.4, tiltZ: 1.3 })
+  });
+  assert.deepEqual(
+    await available.readCurrentTilt(),
+    { x: 1.2, y: -0.4, z: 1.3 }
+  );
 });

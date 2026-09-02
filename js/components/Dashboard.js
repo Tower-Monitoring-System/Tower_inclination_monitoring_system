@@ -3,9 +3,8 @@ import { DASHBOARD_ACTION } from "../core/constants.js";
 import { AlertPanel } from "./AlertPanel.js?v=20260824.1";
 
 export class Dashboard extends EventTarget {
-  constructor(readonlyStore, options = {}) {
+  constructor(options = {}) {
     super();
-    this.store = readonlyStore;
     this.document = options.documentRef || document;
     this.window = options.windowRef || window;
     this.abortController = new AbortController();
@@ -18,7 +17,6 @@ export class Dashboard extends EventTarget {
     this.elements = this.collectElements();
 
     this.bindEvents();
-    this.unsubscribe = this.store.subscribe((state) => this.render(state));
     this.scheduleReveal();
   }
 
@@ -130,14 +128,6 @@ export class Dashboard extends EventTarget {
     }
   }
 
-  render(state) {
-    this.renderSafely("Summary", () => this.renderSummary(state.summary));
-
-    if (state.stations.length) {
-      this.reveal();
-    }
-  }
-
   renderSafely(componentName, renderComponent) {
     try {
       renderComponent();
@@ -148,17 +138,6 @@ export class Dashboard extends EventTarget {
         "error"
       );
     }
-  }
-
-  renderSummary(summary) {
-    if (!summary) {
-      return;
-    }
-
-    this.setText(
-      "sidebarTowerCount",
-      this.registeredTowerCount === null ? summary.totalTowers : this.registeredTowerCount
-    );
   }
 
   updateTowerRegistry(towers) {
@@ -271,7 +250,6 @@ export class Dashboard extends EventTarget {
 
   destroy() {
     this.abortController.abort();
-    this.unsubscribe?.();
     this.window.clearTimeout(this.toastTimer);
     this.window.clearTimeout(this.resizeTimer);
     this.window.clearTimeout(this.revealTimer);
