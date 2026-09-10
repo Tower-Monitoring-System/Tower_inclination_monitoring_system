@@ -19,14 +19,15 @@ enum class NodeLoRaStatus : uint8_t {
 
 class NodeLoRaManager {
 public:
-  static constexpr uint32_t SAMPLE_INTERVAL_MS = 60000UL;
+  // Nguon thoi gian duy nhat cho ca do Battery va gui telemetry.
+  static constexpr uint32_t SAMPLE_INTERVAL_MS = 60UL * 60UL * 1000U; // 60UL * 60UL * 1000U = 1 hour, 60000UL = 1 min
 
   NodeLoRaManager(HardwareSerial &serial, int8_t rxPin, int8_t txPin,
                   int8_t auxPin, int8_t m0Pin, int8_t m1Pin,
                   uint16_t nodeId);
 
   bool begin(uint32_t now);
-  void update(uint32_t now, const TowerSensorData &sensorData);
+  void update(uint32_t now, TowerSensors &sensors);
 
   NodeLoRaStatus status() const;
   uint32_t currentMessageId() const;
@@ -36,6 +37,7 @@ private:
     ENTERING_SLEEP,
     SLEEPING,
     DISCONNECTED_SLEEP,
+    WAITING_BATTERY,
     WAKING,
     READY_TO_SNAPSHOT,
     WAITING_SEND_AUX,
@@ -52,6 +54,7 @@ private:
   static constexpr uint32_t RESULT_DISPLAY_MS = 1200UL;
   static constexpr uint8_t MAX_RETRIES = 3U;
   static constexpr uint8_t MAX_RX_BYTES_PER_UPDATE = 64U;
+  static constexpr bool ACQUISITION_DIAGNOSTICS_ENABLED = false;
 
   HardwareSerial &_serial;
   LoRa_E32 _radio;
@@ -69,6 +72,8 @@ private:
   uint32_t _retryAt;
   uint32_t _resultVisibleUntil;
   bool _resultHoldActive;
+  TowerSensors::BatteryRequestId _batteryRequestId;
+  bool _batteryCycleFromDisconnected;
 
   uint32_t _bootSessionSeed;
   uint32_t _messageSequence;
@@ -82,6 +87,10 @@ private:
   static uint16_t quantizeUnsigned(float value, float scale, float maximum);
 
   void setStatus(NodeLoRaStatus status);
+  void advanceSampleDeadline(uint32_t now);
+  void startScheduledCycle(uint32_t now, TowerSensors &sensors,
+                           bool fromDisconnected);
+  void cancelCycleBeforeWake(uint32_t now, const char *reason);
   bool requestMode(MODE_TYPE mode, uint32_t now);
   bool isAuxStableReady(uint32_t now);
   bool isModeReady(uint32_t now);

@@ -162,7 +162,7 @@ void MasterLoRaManager::handleData(const DataPacket &packet, uint32_t now) {
   constexpr uint8_t KNOWN_FLAGS =
       FLAG_X_VALID | FLAG_Y_VALID | FLAG_Z_VALID |
       FLAG_TEMPERATURE_VALID | FLAG_BATTERY_VALID |
-      FLAG_ORIENTATION_FALLBACK;
+      FLAG_FAST_ORIENTATION;
 
   if (packet.nodeId != _expectedNodeId || packet.messageId == 0U) {
     setTransientStatus(MasterLoRaStatus::ERROR, now + ERROR_DISPLAY_MS);

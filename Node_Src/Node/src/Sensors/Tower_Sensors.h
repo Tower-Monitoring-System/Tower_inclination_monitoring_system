@@ -48,7 +48,7 @@ constexpr float VIBRATION_SCORE_ALPHA = 0.08F;
 constexpr float VIBRATION_ENTER_SCORE = 0.90F;
 constexpr float VIBRATION_EXIT_SCORE = 0.45F;
 
-// Bat de xem du lieu ADC da loc moi 3 giay. Mac dinh OFF de khong spam Serial.
+// Bat de xem du lieu ADC da loc. Mac dinh OFF de khong spam Serial.
 constexpr bool ADC_DIAGNOSTICS_ENABLED = false;
 constexpr uint32_t ADC_DIAGNOSTIC_INTERVAL_MS = 3000UL;
 
@@ -105,7 +105,6 @@ constexpr float BATTERY_MAX_VALID_VOLTS = 15.5F;
 constexpr uint16_t BATTERY_ADC_MIN_VALID_MV = 100U;
 constexpr uint16_t BATTERY_ADC_MAX_VALID_MV = 3100U;
 
-constexpr uint32_t BATTERY_MEASUREMENT_INTERVAL_MS = 3000UL;
 constexpr uint32_t BATTERY_SETTLING_TIME_MS = 50UL;
 constexpr uint32_t BATTERY_MEASUREMENT_TIMEOUT_MS = 1500UL;
 constexpr uint8_t BATTERY_SAMPLE_COUNT = 15;
@@ -114,7 +113,6 @@ constexpr uint8_t BATTERY_SAMPLES_PER_UPDATE = 4;
 constexpr uint8_t BATTERY_WARMUP_SAMPLE_COUNT = 2;
 constexpr uint8_t BATTERY_TRIM_SAMPLES_PER_SIDE = 3;
 constexpr uint8_t BATTERY_MIN_VALID_SAMPLES = 9;
-constexpr uint8_t BATTERY_FAILED_CYCLES_BEFORE_INVALID = 3;
 constexpr float BATTERY_FILTER_ALPHA = 0.25F;
 
 static_assert(LM35_CALIBRATION_INPUT_POINT_2_MV !=
@@ -139,8 +137,8 @@ struct TowerSensorData {
   float angleYDegrees;
   float angleZDegrees;
 
-  // Gia tri da xac nhan cho LoRa/canh bao. Chi Roll/Pitch duoc dung de danh
-  // gia Tower; Yaw khong tham gia vi MPU6050 khong co magnetometer.
+  // Gia tri da xac nhan cho canh bao do nghieng Tower. Chi Roll/Pitch duoc
+  // dung de danh gia Tower; Yaw khong tham gia vi MPU6050 khong co magnetometer.
   float structuralRollDegrees;
   float structuralPitchDegrees;
   float structuralTiltDegrees;
@@ -185,11 +183,14 @@ struct TowerSensorData {
 /**
  * Quan ly MPU6050 DMP tren I2C rieng va LM35 theo kieu non-blocking.
  *
- * DMP -> median, sau do tach thanh Fast Angle phan hoi nhanh va Structural
- * Tilt robust co vibration gating, persistence va hysteresis.
+ * DMP -> median, sau do tach thanh Fast Angle X/Y/Z cho OLED va telemetry,
+ * cung Structural Tilt robust co vibration gating cho canh bao Tower.
  */
 class TowerSensors {
 public:
+  using BatteryRequestId = uint32_t;
+  static constexpr BatteryRequestId INVALID_BATTERY_REQUEST_ID = 0U;
+
   explicit TowerSensors(TwoWire &mpuWire,
                         uint8_t mpuAddress = MPU6050_DEFAULT_ADDRESS);
 
@@ -199,6 +200,9 @@ public:
 
   const TowerSensorData &data() const;
   bool isMpuReady() const;
+  BatteryRequestId requestBatteryMeasurement(uint32_t now);
+  bool isBatteryMeasurementComplete(BatteryRequestId requestId) const;
+  bool didBatteryMeasurementSucceed(BatteryRequestId requestId) const;
 
 private:
   static constexpr uint8_t ANGLE_AXIS_COUNT = 3;
@@ -269,9 +273,12 @@ private:
   uint8_t _batterySampleCount;
   uint8_t _batteryAttemptCount;
   uint8_t _batteryWarmupSamplesRemaining;
-  uint8_t _batteryFailedCycles;
   uint16_t _batteryLastAdcMilliVolts;
   bool _batteryFilterInitialized;
+  bool _batteryLastRequestSucceeded;
+  BatteryRequestId _batteryRequestSequence;
+  BatteryRequestId _activeBatteryRequestId;
+  BatteryRequestId _completedBatteryRequestId;
 
   uint32_t _lastMpuInitAttemptAt;
   uint32_t _lastMpuPacketAt;
@@ -280,7 +287,6 @@ private:
   uint32_t _lastLm35SampleAt;
   uint32_t _lastLm35ValidAt;
   uint32_t _lastLm35DiagnosticAt;
-  uint32_t _lastBatteryMeasurementAt;
   uint32_t _batteryStateStartedAt;
   uint32_t _lastBatteryDiagnosticAt;
 
@@ -313,7 +319,7 @@ private:
   void sampleBattery(uint32_t now);
   void finishBatteryMeasurement(uint32_t now);
   void abortBatteryMeasurement(uint32_t now);
-  void registerBatteryFailure();
+  void completeBatteryMeasurement(bool success);
   void printBatteryDiagnostics(uint32_t now, float averageRaw,
                                float rawMilliVolts,
                                float dividedVoltage,

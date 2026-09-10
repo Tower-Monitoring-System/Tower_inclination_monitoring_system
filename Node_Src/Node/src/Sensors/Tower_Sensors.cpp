@@ -61,9 +61,12 @@ TowerSensors::TowerSensors(TwoWire &mpuWire, uint8_t mpuAddress)
       _batterySampleCount(0),
       _batteryAttemptCount(0),
       _batteryWarmupSamplesRemaining(0),
-      _batteryFailedCycles(0),
       _batteryLastAdcMilliVolts(0),
       _batteryFilterInitialized(false),
+      _batteryLastRequestSucceeded(false),
+      _batteryRequestSequence(INVALID_BATTERY_REQUEST_ID),
+      _activeBatteryRequestId(INVALID_BATTERY_REQUEST_ID),
+      _completedBatteryRequestId(INVALID_BATTERY_REQUEST_ID),
       _lastMpuInitAttemptAt(0),
       _lastMpuPacketAt(0),
       _lastAngleFilterAt(0),
@@ -71,7 +74,6 @@ TowerSensors::TowerSensors(TwoWire &mpuWire, uint8_t mpuAddress)
       _lastLm35SampleAt(0),
       _lastLm35ValidAt(0),
       _lastLm35DiagnosticAt(0),
-      _lastBatteryMeasurementAt(0),
       _batteryStateStartedAt(0),
       _lastBatteryDiagnosticAt(0) {}
 
@@ -109,8 +111,6 @@ bool TowerSensors::begin(int8_t mpuSdaPin, int8_t mpuSclPin,
   _lastLm35ValidAt = now;
   _lastLm35DiagnosticAt = now;
   _lastBatteryDiagnosticAt = now;
-  _lastBatteryMeasurementAt =
-      now - TowerSensorConfig::BATTERY_MEASUREMENT_INTERVAL_MS;
   return initializeMpu(now);
 }
 
@@ -125,6 +125,38 @@ void TowerSensors::update(uint32_t now) {
 const TowerSensorData &TowerSensors::data() const { return _data; }
 
 bool TowerSensors::isMpuReady() const { return _mpuReady; }
+
+TowerSensors::BatteryRequestId TowerSensors::requestBatteryMeasurement(
+    uint32_t now) {
+  if (_batteryState != BatteryState::IDLE) {
+    return INVALID_BATTERY_REQUEST_ID;
+  }
+
+  ++_batteryRequestSequence;
+  if (_batteryRequestSequence == INVALID_BATTERY_REQUEST_ID) {
+    ++_batteryRequestSequence;
+  }
+
+  _activeBatteryRequestId = _batteryRequestSequence;
+  _batteryLastRequestSucceeded = false;
+  // Trong luc dang do, khong cho consumer xem gia tri cua chu ky truoc la moi.
+  // Dien ap cu van duoc giu noi bo de EMA lien tuc neu phep do nay thanh cong.
+  _data.batteryValid = false;
+  startBatteryMeasurement(now);
+  return _activeBatteryRequestId;
+}
+
+bool TowerSensors::isBatteryMeasurementComplete(
+    BatteryRequestId requestId) const {
+  return requestId != INVALID_BATTERY_REQUEST_ID &&
+         requestId == _completedBatteryRequestId;
+}
+
+bool TowerSensors::didBatteryMeasurementSucceed(
+    BatteryRequestId requestId) const {
+  return isBatteryMeasurementComplete(requestId) &&
+         _batteryLastRequestSucceeded;
+}
 
 bool TowerSensors::initializeMpu(uint32_t now) {
   _lastMpuInitAttemptAt = now;
@@ -666,10 +698,8 @@ void TowerSensors::updateBattery(uint32_t now) {
 
   switch (_batteryState) {
     case BatteryState::IDLE:
-      if (now - _lastBatteryMeasurementAt >=
-          TowerSensorConfig::BATTERY_MEASUREMENT_INTERVAL_MS) {
-        startBatteryMeasurement(now);
-      }
+      // Battery chi duoc kich hoat boi requestBatteryMeasurement() cua chu ky
+      // telemetry. Khong ton tai timer Battery doc lap.
       break;
 
     case BatteryState::SETTLING:
@@ -736,7 +766,6 @@ void TowerSensors::finishBatteryMeasurement(uint32_t now) {
   // Tat cau phan ap truoc khi xu ly so lieu de bao dam thoi gian ON ngan nhat.
   digitalWrite(_batteryMeasurePin, LOW);
   _batteryState = BatteryState::IDLE;
-  _lastBatteryMeasurementAt = now;
 
   if (_batterySampleCount <
       TowerSensorConfig::BATTERY_MIN_VALID_SAMPLES) {
@@ -749,7 +778,7 @@ void TowerSensors::finishBatteryMeasurement(uint32_t now) {
       Serial.print(_batteryLastAdcMilliVolts);
       Serial.println(" mV");
     }
-    registerBatteryFailure();
+    completeBatteryMeasurement(false);
     return;
   }
 
@@ -774,7 +803,7 @@ void TowerSensors::finishBatteryMeasurement(uint32_t now) {
   if (!isfinite(calibratedVoltage) ||
       calibratedVoltage < TowerSensorConfig::BATTERY_MIN_VALID_VOLTS ||
       calibratedVoltage > TowerSensorConfig::BATTERY_MAX_VALID_VOLTS) {
-    registerBatteryFailure();
+    completeBatteryMeasurement(false);
     return;
   }
 
@@ -787,29 +816,30 @@ void TowerSensors::finishBatteryMeasurement(uint32_t now) {
         (calibratedVoltage - _data.batteryVoltage);
   }
 
-  _batteryFailedCycles = 0;
   _data.batteryValid = true;
+  completeBatteryMeasurement(true);
 }
 
 void TowerSensors::abortBatteryMeasurement(uint32_t now) {
+  (void)now;
   digitalWrite(_batteryMeasurePin, LOW);
   _batteryState = BatteryState::IDLE;
-  _lastBatteryMeasurementAt = now;
   _batterySampleCount = 0;
   _batteryAttemptCount = 0;
-  registerBatteryFailure();
+  completeBatteryMeasurement(false);
   if (TowerSensorConfig::ADC_DIAGNOSTICS_ENABLED) {
     Serial.println("[ADC][BAT] timeout; divider forced OFF");
   }
 }
 
-void TowerSensors::registerBatteryFailure() {
-  if (_batteryFailedCycles < 255U) {
-    ++_batteryFailedCycles;
-  }
-  if (!_data.batteryValid ||
-      _batteryFailedCycles >=
-          TowerSensorConfig::BATTERY_FAILED_CYCLES_BEFORE_INVALID) {
+void TowerSensors::completeBatteryMeasurement(bool success) {
+  // Fail-safe cuoi cung cho moi duong thoat, ke ca mau ADC loi va timeout.
+  digitalWrite(_batteryMeasurePin, LOW);
+  _batteryState = BatteryState::IDLE;
+  _batteryLastRequestSucceeded = success;
+  _completedBatteryRequestId = _activeBatteryRequestId;
+
+  if (!success) {
     _data.batteryVoltage = NAN;
     _data.batteryValid = false;
     _batteryFilterInitialized = false;

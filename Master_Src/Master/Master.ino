@@ -27,6 +27,7 @@ constexpr uint32_t WIFI_CONNECT_TIMEOUT_MS = 15000UL;
 constexpr uint8_t WIFI_CONNECTION_RETRY_COUNT = 2U;
 constexpr uint32_t WIFI_RETRY_INTERVAL_MS = 5000UL;
 constexpr uint32_t WIFI_MAX_RETRY_INTERVAL_MS = 60000UL;
+constexpr uint32_t WIFI_PROVISIONING_RETRY_MS = 7500UL;
 constexpr uint32_t ON_DEMAND_PORTAL_TIMEOUT_MS = 5UL * 60UL * 1000UL;
 constexpr uint32_t QUEUE_ENQUEUE_RETRY_MS = 1000UL;
 constexpr uint8_t QUEUE_CLEAR_BUTTON_PIN = 35U;
@@ -52,6 +53,9 @@ bool wifiPortalIpConfigured = false;
 bool wifiWasConnected = false;
 bool wifiEverConnected = false;
 uint32_t wifiConnectedAt = 0;
+bool wifiProvisioningRequired = false;
+bool wifiPortalRetryScheduled = false;
+uint32_t wifiPortalRetryAt = 0;
 bool ntpStarted = false;
 bool queueEnqueueRetryScheduled = false;
 uint32_t queueEnqueueRetryAt = 0;
@@ -74,6 +78,9 @@ MasterDashboardState masterDashboardState = {
 };
 
 bool startWifiConfigPortal(uint32_t timeoutMs);
+void serviceWifiProvisioning(uint32_t now);
+void scheduleWifiProvisioningRetry(uint32_t now);
+void completeWifiProvisioning();
 void updateWifiStateAndDisplay(uint32_t now);
 void startNtpIfNeeded();
 bool isNtpTimeSynchronized();
@@ -128,9 +135,14 @@ void setup() {
     Serial.print("[WIFI] Cau hinh retry that bai: ");
     Serial.println(wifiPortal.lastError());
   }
-  wifiPortal.onConnected([]() { wifiConnectedCallbackPending = true; });
+  wifiPortal.onCredentialsSaved([]() { completeWifiProvisioning(); });
+  wifiPortal.onConnected([]() {
+    wifiConnectedCallbackPending = true;
+    completeWifiProvisioning();
+  });
 
   const bool hasSavedWifi = wifiPortal.hasSavedCredentials();
+  wifiProvisioningRequired = !hasSavedWifi;
   wifiPortal.setAutoReconnect(true);
   if (hasSavedWifi) {
     Serial.println(
@@ -150,10 +162,12 @@ void loop() {
 
   // ESP32WiFiPortal la noi duy nhat quan ly WiFiEvent, ket noi va reconnect.
   wifiPortal.process();
+  const uint32_t wifiNow = millis();
+  serviceWifiProvisioning(wifiNow);
 
   syncLoRaDashboardState();
   syncGoogleSheetDashboardState();
-  updateWifiStateAndDisplay(millis());
+  updateWifiStateAndDisplay(wifiNow);
 
   // yield() chi nhuong quyen xu ly, khong tao thoi gian cho nhu delay().
   yield();
@@ -167,6 +181,8 @@ bool startWifiConfigPortal(uint32_t timeoutMs) {
   }
 
   if (wifiPortal.isPortalActive()) {
+    wifiPortalRetryScheduled = false;
+    wifiPortalRetryAt = 0U;
     return true;
   }
 
@@ -174,14 +190,76 @@ bool startWifiConfigPortal(uint32_t timeoutMs) {
                                           timeoutMs)) {
     Serial.print("[WIFI] Khong the mo Config Portal: ");
     Serial.println(wifiPortal.lastError());
+    scheduleWifiProvisioningRetry(millis());
     return false;
   }
+
+  wifiPortalRetryScheduled = false;
+  wifiPortalRetryAt = 0U;
 
   Serial.print("[WIFI] Config Portal san sang: ");
   Serial.print(wifiPortal.portalSSID());
   Serial.print(" tai http://");
   Serial.println(wifiPortal.portalIP());
   return true;
+}
+
+void serviceWifiProvisioning(uint32_t now) {
+  if (!wifiProvisioningRequired) {
+    wifiPortalRetryScheduled = false;
+    wifiPortalRetryAt = 0U;
+    return;
+  }
+
+  // Neu Portal van dang phuc vu user/candidate thi tuyet doi khong restart.
+  // Candidate chi duoc xem la provisioned sau callback save/connected.
+  if (wifiPortal.isPortalActive()) {
+    wifiPortalRetryScheduled = false;
+    wifiPortalRetryAt = 0U;
+    return;
+  }
+
+  if (wifiPortal.isConnected()) {
+    completeWifiProvisioning();
+    return;
+  }
+
+  if (!wifiPortalRetryScheduled) {
+    scheduleWifiProvisioningRetry(now);
+    return;
+  }
+  if (!timeReached(now, wifiPortalRetryAt)) {
+    return;
+  }
+
+  wifiPortalRetryScheduled = false;
+  wifiPortalRetryAt = 0U;
+  Serial.println("[WIFI] Thu mo lai Config Portal cho provisioning...");
+  startWifiConfigPortal(0U);
+}
+
+void scheduleWifiProvisioningRetry(uint32_t now) {
+  if (!wifiProvisioningRequired || wifiPortalRetryScheduled ||
+      !wifiPortalIpConfigured || wifiPortal.isPortalActive() ||
+      wifiPortal.isConnected()) {
+    return;
+  }
+
+  wifiPortalRetryAt = now + WIFI_PROVISIONING_RETRY_MS;
+  wifiPortalRetryScheduled = true;
+  Serial.printf("[WIFI] Se thu lai Config Portal sau %lu ms.\n",
+                static_cast<unsigned long>(WIFI_PROVISIONING_RETRY_MS));
+}
+
+void completeWifiProvisioning() {
+  if (!wifiProvisioningRequired) {
+    return;
+  }
+
+  wifiProvisioningRequired = false;
+  wifiPortalRetryScheduled = false;
+  wifiPortalRetryAt = 0U;
+  Serial.println("[WIFI] Provisioning hoan tat; huy retry Config Portal.");
 }
 
 void updateWifiStateAndDisplay(uint32_t now) {
@@ -282,8 +360,11 @@ void captureNewTelemetry() {
 
   switch (result) {
     case TelemetryEnqueueResult::QUEUED:
-      Serial.printf("[QUEUE] LoRa RX ID=%lu -> queued, pending=%u\n",
+      Serial.printf("[QUEUE] ID=%lu X=%.2f Y=%.2f Z=%.2f -> queued, "
+                    "pending=%u\n",
                     static_cast<unsigned long>(telemetry.messageId),
+                    telemetry.xDegrees, telemetry.yDegrees,
+                    telemetry.zDegrees,
                     static_cast<unsigned>(googleSheetUploader.pendingCount()));
       consumeTelemetry = true;
       break;
@@ -345,9 +426,9 @@ void logInvalidTelemetry(const MasterTelemetry &telemetry) {
   Serial.printf(" X=%.2f Y=%.2f Z=%.2f BAT=%.3f quality=%s\n",
                 telemetry.xDegrees, telemetry.yDegrees, telemetry.zDegrees,
                 telemetry.batteryVoltage,
-                (telemetry.validFlags & FLAG_ORIENTATION_FALLBACK) != 0U
-                    ? "FAST_FALLBACK"
-                    : "STRUCT");
+                (telemetry.validFlags & FLAG_FAST_ORIENTATION) != 0U
+                    ? "FAST_MPU6050"
+                    : "UNKNOWN");
 }
 
 void handleQueueClearButton(uint32_t now) {

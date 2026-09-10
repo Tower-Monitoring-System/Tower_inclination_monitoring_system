@@ -15,9 +15,9 @@ constexpr uint8_t FLAG_Y_VALID = 1U << 1;
 constexpr uint8_t FLAG_Z_VALID = 1U << 2;
 constexpr uint8_t FLAG_TEMPERATURE_VALID = 1U << 3;
 constexpr uint8_t FLAG_BATTERY_VALID = 1U << 4;
-// X/Y/Z duoc tao tu bo loc goc nhanh khi gia tri structural chua duoc
-// xac nhan. Master van nhan mau, dong thoi co the nhan biet chat luong mau.
-constexpr uint8_t FLAG_ORIENTATION_FALLBACK = 1U << 5;
+// X/Y/Z dung cung bo du lieu MPU6050 dang hien thi tren OLED Node:
+// X=Roll, Y=Pitch, Z=Yaw. Bit nay giu nguyen vi tri tren wire protocol.
+constexpr uint8_t FLAG_FAST_ORIENTATION = 1U << 5;
 
 constexpr uint8_t ACK_ACCEPTED = 0U;
 constexpr uint8_t ACK_DUPLICATE = 1U;

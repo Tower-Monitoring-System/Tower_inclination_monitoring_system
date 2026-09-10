@@ -14,6 +14,17 @@ constexpr uint8_t LM35_PIN = 4;
 constexpr uint8_t BATTERY_MEASURE_PIN = 26;
 constexpr uint8_t BATTERY_ADC_PIN = 27;
 
+//-------------- Relay bao ve qua nhiet --------------//
+constexpr uint8_t OVERHEAT_RELAY_PIN = 25;
+// Doi thanh LOW neu module relay thuc te kich muc thap.
+constexpr uint8_t OVERHEAT_RELAY_ACTIVE_LEVEL = HIGH;
+constexpr uint8_t OVERHEAT_RELAY_INACTIVE_LEVEL =
+    OVERHEAT_RELAY_ACTIVE_LEVEL == HIGH ? LOW : HIGH;
+constexpr float OVERHEAT_RELAY_ON_C = 40.0F;
+constexpr float OVERHEAT_RELAY_OFF_C = 38.0F;
+constexpr uint32_t OVERHEAT_RELAY_ON_PERSISTENCE_MS = 500UL;
+constexpr uint32_t OVERHEAT_RELAY_OFF_PERSISTENCE_MS = 3000UL;
+
 //-------------- AS32-TTL-100 / UART2 --------------//
 constexpr int8_t LORA_RX_PIN = 16;
 constexpr int8_t LORA_TX_PIN = 17;
@@ -41,6 +52,11 @@ uint32_t buttonLastTransitionAt = 0;
 bool oledAwake = false;
 bool buttonRawState = HIGH;
 bool buttonStableState = HIGH;
+bool overheatRelayActive = false;
+bool relayTransitionPending = false;
+bool pendingRelayState = false;
+bool relayTemperatureFaultActive = false;
+uint32_t relayConditionSince = 0;
 NodeLoRaStatus lastLoRaStatus = NodeLoRaStatus::DISCONNECTED;
 bool loRaStatusInitialized = false;
 
@@ -49,9 +65,15 @@ void updateOledButton(uint32_t now);
 void wakeOled(uint32_t now);
 void sleepOled();
 void syncLoRaDisplayState();
+void updateOverheatRelay(uint32_t now);
+void setOverheatRelay(bool active, float temperatureCelsius);
 LoraNodeState toDisplayState(NodeLoRaStatus status);
 
 void setup() {
+  // Ghi muc khong kich truoc pinMode de tranh xung dong relay khi boot.
+  digitalWrite(OVERHEAT_RELAY_PIN, OVERHEAT_RELAY_INACTIVE_LEVEL);
+  pinMode(OVERHEAT_RELAY_PIN, OUTPUT);
+
   pinMode(BATTERY_MEASURE_PIN, OUTPUT);
   digitalWrite(BATTERY_MEASURE_PIN, LOW);
 
@@ -87,7 +109,8 @@ void setup() {
 void loop() {
   const uint32_t now = millis();
   towerSensors.update(now);
-  nodeLoRa.update(now, towerSensors.data());
+  updateOverheatRelay(now);
+  nodeLoRa.update(now, towerSensors);
   syncLoRaDisplayState();
   updateOledButton(now);
 
@@ -163,8 +186,73 @@ void updateDisplayFromSensors(uint32_t now) {
                                  ? sensorData.temperatureCelsius
                                  : NAN);
   nodeDisplay.setBatteryVoltage(sensorData.batteryValid
-                                    ? sensorData.batteryVoltage
-                                    : NAN);
+                                     ? sensorData.batteryVoltage
+                                     : NAN);
+}
+
+void updateOverheatRelay(uint32_t now) {
+  const TowerSensorData &sensorData = towerSensors.data();
+  const bool temperatureValid =
+      sensorData.temperatureValid && isfinite(sensorData.temperatureCelsius);
+
+  if (!temperatureValid) {
+    relayTransitionPending = false;
+    // Giu nguyen trang thai khi LM35 loi: relay dang dong se khong bi mo ngoai
+    // y muon, con luc boot relay van o trang thai khong kich an toan.
+    if (!relayTemperatureFaultActive) {
+      relayTemperatureFaultActive = true;
+      Serial.printf("[RELAY] LM35 invalid; retaining relay %s\n",
+                    overheatRelayActive ? "ON" : "OFF");
+    }
+    return;
+  }
+
+  if (relayTemperatureFaultActive) {
+    relayTemperatureFaultActive = false;
+    Serial.println("[RELAY] LM35 data restored");
+  }
+
+  bool requestedState = overheatRelayActive;
+  if (!overheatRelayActive &&
+      sensorData.temperatureCelsius >= OVERHEAT_RELAY_ON_C) {
+    requestedState = true;
+  } else if (overheatRelayActive &&
+             sensorData.temperatureCelsius <= OVERHEAT_RELAY_OFF_C) {
+    requestedState = false;
+  } else {
+    relayTransitionPending = false;
+    return;
+  }
+
+  if (!relayTransitionPending || pendingRelayState != requestedState) {
+    relayTransitionPending = true;
+    pendingRelayState = requestedState;
+    relayConditionSince = now;
+    return;
+  }
+
+  const uint32_t requiredPersistence =
+      requestedState ? OVERHEAT_RELAY_ON_PERSISTENCE_MS
+                     : OVERHEAT_RELAY_OFF_PERSISTENCE_MS;
+  if (now - relayConditionSince < requiredPersistence) {
+    return;
+  }
+
+  relayTransitionPending = false;
+  setOverheatRelay(requestedState, sensorData.temperatureCelsius);
+}
+
+void setOverheatRelay(bool active, float temperatureCelsius) {
+  if (overheatRelayActive == active) {
+    return;
+  }
+
+  digitalWrite(OVERHEAT_RELAY_PIN,
+               active ? OVERHEAT_RELAY_ACTIVE_LEVEL
+                      : OVERHEAT_RELAY_INACTIVE_LEVEL);
+  overheatRelayActive = active;
+  Serial.printf("[RELAY] %s at %.2f C\n", active ? "ON" : "OFF",
+                temperatureCelsius);
 }
 
 void syncLoRaDisplayState() {

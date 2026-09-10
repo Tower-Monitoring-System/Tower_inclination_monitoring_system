@@ -25,6 +25,8 @@ NodeLoRaManager::NodeLoRaManager(HardwareSerial &serial, int8_t rxPin,
       _retryAt(0),
       _resultVisibleUntil(0),
       _resultHoldActive(false),
+      _batteryRequestId(TowerSensors::INVALID_BATTERY_REQUEST_ID),
+      _batteryCycleFromDisconnected(false),
       _bootSessionSeed(0),
       _messageSequence(0),
       _attemptCount(0),
@@ -57,8 +59,7 @@ bool NodeLoRaManager::begin(uint32_t now) {
   return true;
 }
 
-void NodeLoRaManager::update(uint32_t now,
-                             const TowerSensorData &sensorData) {
+void NodeLoRaManager::update(uint32_t now, TowerSensors &sensors) {
   if (_state == State::WAITING_SEND_AUX ||
       _state == State::WAITING_ACK || _state == State::RETRY_DELAY) {
     if (processIncomingAck(now)) {
@@ -83,28 +84,47 @@ void NodeLoRaManager::update(uint32_t now,
       }
 
       if (timeReached(now, _nextSampleAt)) {
-        _nextSampleAt = now + SAMPLE_INTERVAL_MS;
-        if (!requestMode(MODE_0_NORMAL, now)) {
-          enterDisconnectedSleep(now, "WAKE MODE");
-          break;
-        }
-        _state = State::WAKING;
-        _stateStartedAt = now;
+        startScheduledCycle(now, sensors, false);
       }
       break;
 
     case State::DISCONNECTED_SLEEP:
       if (timeReached(now, _nextSampleAt)) {
-        _nextSampleAt = now + SAMPLE_INTERVAL_MS;
-        // UART va GPIO da duoc khoi tao trong setup(). Chi thu lai mode/AUX
-        // bang state machine; khong goi begin() blocking trong loop().
-        if (!requestMode(MODE_0_NORMAL, now)) {
-          enterDisconnectedSleep(now, "RECONNECT");
-          break;
-        }
-        _state = State::WAKING;
-        _stateStartedAt = now;
+        startScheduledCycle(now, sensors, true);
       }
+      break;
+
+    case State::WAITING_BATTERY:
+      if (!sensors.isBatteryMeasurementComplete(_batteryRequestId)) {
+        break;
+      }
+
+      if (!sensors.didBatteryMeasurementSucceed(_batteryRequestId) ||
+          !sensors.data().batteryValid ||
+          !isfinite(sensors.data().batteryVoltage)) {
+        cancelCycleBeforeWake(now, "BATTERY INVALID");
+        break;
+      }
+
+      if (ACQUISITION_DIAGNOSTICS_ENABLED) {
+        Serial.printf(
+            "[ACQ] BAT request=%lu ready in %lu ms, %.3f V; BAT_MEAS=LOW\n",
+                      static_cast<unsigned long>(_batteryRequestId),
+                      static_cast<unsigned long>(now - _stateStartedAt),
+                      sensors.data().batteryVoltage);
+      }
+
+      // UART va GPIO da duoc khoi tao trong setup(). Chi doi mode/AUX bang
+      // state machine; khong goi begin() blocking trong loop().
+      if (!requestMode(MODE_0_NORMAL, now)) {
+        _batteryRequestId = TowerSensors::INVALID_BATTERY_REQUEST_ID;
+        enterDisconnectedSleep(now, _batteryCycleFromDisconnected
+                                        ? "RECONNECT"
+                                        : "WAKE MODE");
+        break;
+      }
+      _state = State::WAKING;
+      _stateStartedAt = now;
       break;
 
     case State::WAKING:
@@ -113,16 +133,33 @@ void NodeLoRaManager::update(uint32_t now,
         _state = State::READY_TO_SNAPSHOT;
         _stateStartedAt = now;
       } else if (modeTimedOut(now)) {
+        _batteryRequestId = TowerSensors::INVALID_BATTERY_REQUEST_ID;
         enterDisconnectedSleep(now, "WAKE AUX");
       }
       break;
 
-    case State::READY_TO_SNAPSHOT:
+    case State::READY_TO_SNAPSHOT: {
+      const TowerSensorData &sensorData = sensors.data();
+      if (!sensors.didBatteryMeasurementSucceed(_batteryRequestId) ||
+          !sensorData.batteryValid || !isfinite(sensorData.batteryVoltage)) {
+        Serial.println(
+            "[LORA] BATTERY became invalid; telemetry cycle skipped");
+        _batteryRequestId = TowerSensors::INVALID_BATTERY_REQUEST_ID;
+        setStatus(NodeLoRaStatus::FAILED);
+        _resultVisibleUntil = now + RESULT_DISPLAY_MS;
+        _resultHoldActive = true;
+        requestSleepAfterResult(now);
+        break;
+      }
+
       discardStaleInput();
       prepareSnapshot(sensorData);
+      _batteryRequestId = TowerSensors::INVALID_BATTERY_REQUEST_ID;
+      _batteryCycleFromDisconnected = false;
       _state = State::WAITING_SEND_AUX;
       _stateStartedAt = now;
       break;
+    }
 
     case State::WAITING_SEND_AUX:
       if (isAuxStableReady(now)) {
@@ -196,6 +233,56 @@ uint16_t NodeLoRaManager::quantizeUnsigned(float value, float scale,
 
 void NodeLoRaManager::setStatus(NodeLoRaStatus status) { _status = status; }
 
+void NodeLoRaManager::advanceSampleDeadline(uint32_t now) {
+  static_assert(SAMPLE_INTERVAL_MS > 0U,
+                "LoRa sample interval must be greater than zero");
+  // Cong tu deadline cu thay vi now + interval de khong tich luy drift. Phep
+  // tru uint32_t giu dung hanh vi khi millis() rollover.
+  const uint32_t elapsedIntervals =
+      (now - _nextSampleAt) / SAMPLE_INTERVAL_MS;
+  _nextSampleAt += (elapsedIntervals + 1U) * SAMPLE_INTERVAL_MS;
+}
+
+void NodeLoRaManager::startScheduledCycle(uint32_t now, TowerSensors &sensors,
+                                          bool fromDisconnected) {
+  advanceSampleDeadline(now);
+  _batteryCycleFromDisconnected = fromDisconnected;
+  _batteryRequestId = sensors.requestBatteryMeasurement(now);
+
+  if (_batteryRequestId == TowerSensors::INVALID_BATTERY_REQUEST_ID) {
+    cancelCycleBeforeWake(now, "BATTERY BUSY");
+    return;
+  }
+
+  if (ACQUISITION_DIAGNOSTICS_ENABLED) {
+    Serial.printf(
+        "[ACQ] due t=%lu, BAT request=%lu, next=%lu; BAT_MEAS=HIGH\n",
+        static_cast<unsigned long>(now),
+        static_cast<unsigned long>(_batteryRequestId),
+        static_cast<unsigned long>(_nextSampleAt));
+  }
+  _state = State::WAITING_BATTERY;
+  _stateStartedAt = now;
+}
+
+void NodeLoRaManager::cancelCycleBeforeWake(uint32_t now,
+                                            const char *reason) {
+  Serial.printf("[LORA] %s; telemetry cycle skipped\n", reason);
+  _batteryRequestId = TowerSensors::INVALID_BATTERY_REQUEST_ID;
+  _stateStartedAt = now;
+
+  if (_batteryCycleFromDisconnected) {
+    setStatus(NodeLoRaStatus::DISCONNECTED);
+    _state = State::DISCONNECTED_SLEEP;
+  } else {
+    setStatus(NodeLoRaStatus::FAILED);
+    _resultVisibleUntil = now + RESULT_DISPLAY_MS;
+    _resultHoldActive = true;
+    _state = State::SLEEPING;
+  }
+  _batteryCycleFromDisconnected = false;
+}
+
 bool NodeLoRaManager::requestMode(MODE_TYPE mode, uint32_t now) {
   if (_radio.setModePinsNoWait(mode) != E32_SUCCESS) {
     return false;
@@ -234,6 +321,8 @@ void NodeLoRaManager::enterDisconnectedSleep(uint32_t now,
   Serial.printf("[LORA] DISCONNECTED (%s)\n", reason);
   setStatus(NodeLoRaStatus::DISCONNECTED);
   _radio.setModePinsNoWait(MODE_3_SLEEP);
+  _batteryRequestId = TowerSensors::INVALID_BATTERY_REQUEST_ID;
+  _batteryCycleFromDisconnected = false;
   _state = State::DISCONNECTED_SLEEP;
   _stateStartedAt = now;
   _auxHighSince = 0U;
@@ -245,52 +334,23 @@ void NodeLoRaManager::prepareSnapshot(const TowerSensorData &sensorData) {
   _currentPacket.messageId = nextMessageId();
   const char *orientationSource = "NONE";
 
-  const bool structuralValid =
-      sensorData.structuralTiltValid &&
-      isfinite(sensorData.structuralRollDegrees) &&
-      isfinite(sensorData.structuralPitchDegrees) &&
-      isfinite(sensorData.structuralTiltDegrees);
-  if (structuralValid) {
-    // Quy uoc telemetry da co trong TowerSensors: X=Structural Roll,
-    // Y=Structural Pitch, Z=Structural Tilt (khong dung Fast Angle/Yaw).
-    _currentPacket.xCentidegrees =
-        quantizeSigned(sensorData.structuralRollDegrees, 100.0F, -180.0F,
-                       180.0F);
-    _currentPacket.yCentidegrees =
-        quantizeSigned(sensorData.structuralPitchDegrees, 100.0F, -180.0F,
-                       180.0F);
-    _currentPacket.zCentidegrees =
-        quantizeSigned(sensorData.structuralTiltDegrees, 100.0F, 0.0F,
-                       180.0F);
-    _currentPacket.validFlags |=
-        FLAG_X_VALID | FLAG_Y_VALID | FLAG_Z_VALID;
-    orientationSource = "STRUCT";
-  } else if (sensorData.orientationValid &&
-             isfinite(sensorData.angleXDegrees) &&
-             isfinite(sensorData.angleYDegrees)) {
-    // Structural Tilt can remain invalid while the tower is vibrating or the
-    // persistence window has not converged. Use the existing fast-filtered
-    // Roll/Pitch as a quality-marked fallback; never use Yaw as Z because the
-    // MPU6050 has no magnetometer. Z keeps the same meaning: combined tilt.
-    constexpr float DEGREES_TO_RADIANS = 0.01745329251994329577F;
-    constexpr float RADIANS_TO_DEGREES = 57.295779513082320876F;
-    const float rollRadians =
-        sensorData.angleXDegrees * DEGREES_TO_RADIANS;
-    const float pitchRadians =
-        sensorData.angleYDegrees * DEGREES_TO_RADIANS;
-    const float projection =
-        fmaxf(-1.0F, fminf(1.0F, cosf(rollRadians) * cosf(pitchRadians)));
-    const float combinedTilt = acosf(projection) * RADIANS_TO_DEGREES;
-
+  const bool orientationValid =
+      sensorData.orientationValid && isfinite(sensorData.angleXDegrees) &&
+      isfinite(sensorData.angleYDegrees) &&
+      isfinite(sensorData.angleZDegrees);
+  if (orientationValid) {
+    // Lay cung mot bo gia tri ma OLED Node dang hien thi de khong tron hai
+    // he quy chieu: X=Roll, Y=Pitch, Z=Yaw cua MPU6050 da qua fast filter.
+    // Structural Tilt van duoc TowerSensors su dung rieng cho canh bao Tower.
     _currentPacket.xCentidegrees =
         quantizeSigned(sensorData.angleXDegrees, 100.0F, -180.0F, 180.0F);
     _currentPacket.yCentidegrees =
         quantizeSigned(sensorData.angleYDegrees, 100.0F, -180.0F, 180.0F);
     _currentPacket.zCentidegrees =
-        quantizeSigned(combinedTilt, 100.0F, 0.0F, 180.0F);
+        quantizeSigned(sensorData.angleZDegrees, 100.0F, -180.0F, 180.0F);
     _currentPacket.validFlags |= FLAG_X_VALID | FLAG_Y_VALID | FLAG_Z_VALID |
-                                 FLAG_ORIENTATION_FALLBACK;
-    orientationSource = "FAST_FALLBACK";
+                                 FLAG_FAST_ORIENTATION;
+    orientationSource = "FAST_MPU6050";
   }
 
   if (sensorData.temperatureValid &&
@@ -309,9 +369,13 @@ void NodeLoRaManager::prepareSnapshot(const TowerSensorData &sensorData) {
 
   finalize(_currentPacket);
   Serial.printf(
-      "[LORA] ID=%lu SNAP flags=0x%02X XYZ=%s TEMP=%s BAT=%s\n",
+      "[LORA] ID=%lu SNAP flags=0x%02X XYZ=%s X=%.2f Y=%.2f Z=%.2f "
+      "TEMP=%s BAT=%s\n",
       static_cast<unsigned long>(_currentPacket.messageId),
       static_cast<unsigned>(_currentPacket.validFlags), orientationSource,
+      static_cast<float>(_currentPacket.xCentidegrees) / 100.0F,
+      static_cast<float>(_currentPacket.yCentidegrees) / 100.0F,
+      static_cast<float>(_currentPacket.zCentidegrees) / 100.0F,
       (_currentPacket.validFlags & FLAG_TEMPERATURE_VALID) != 0U ? "OK"
                                                                  : "MISSING",
       (_currentPacket.validFlags & FLAG_BATTERY_VALID) != 0U ? "OK"
