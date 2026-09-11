@@ -20,7 +20,7 @@ enum class NodeLoRaStatus : uint8_t {
 class NodeLoRaManager {
 public:
   // Nguon thoi gian duy nhat cho ca do Battery va gui telemetry.
-  static constexpr uint32_t SAMPLE_INTERVAL_MS = 60UL * 60UL * 1000U; // 60UL * 60UL * 1000U = 1 hour, 60000UL = 1 min
+  static constexpr uint32_t SAMPLE_INTERVAL_MS = 60000UL; // 60UL * 60UL * 1000U = 1 hour, 60000UL = 1 min
 
   NodeLoRaManager(HardwareSerial &serial, int8_t rxPin, int8_t txPin,
                   int8_t auxPin, int8_t m0Pin, int8_t m1Pin,
