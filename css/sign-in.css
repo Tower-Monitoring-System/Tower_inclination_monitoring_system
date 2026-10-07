@@ -165,8 +165,7 @@ body {
   width: 52px;
   height: 52px;
   border-radius: 15px;
-  box-shadow: 0 10px 30px rgba(var(--accent-strong-rgb), 0.14);
-  filter: sepia(1) saturate(1.15);
+  box-shadow: 0 10px 30px rgba(32, 190, 169, 0.14);
 }
 
 .brand-lockup div {
