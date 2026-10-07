@@ -35,7 +35,7 @@ body {
   background-color: var(--page-bg);
 }
 
-/* Fit the complete photo to the viewport independently of the form's height. */
+/* Scale the complete photo to fill the viewport independently of the form's height. */
 body::before {
   position: fixed;
   z-index: 0;
@@ -50,7 +50,7 @@ body::before {
   background-blend-mode: normal, normal, luminosity;
   background-position: center;
   background-repeat: no-repeat;
-  background-size: 100% 100%, 100% 100%, contain;
+  background-size: 100% 100%;
 }
 
 .sign-in-page {
@@ -617,7 +617,6 @@ body::before {
       url("../assets/background/background_sign_in.jpg");
     background-blend-mode: normal, luminosity;
     background-position: center;
-    background-size: 100% 100%, contain;
   }
 
   .sign-in-page {
