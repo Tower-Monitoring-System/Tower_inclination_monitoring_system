@@ -1,7 +1,5 @@
 # Tower Inclination Monitoring System
 
-### Real-Time Monitoring and Early Warning System for High-Voltage Transmission Towers
-
 - **Developer:** Pham Ngoc Luat (Project Leader)
 - **Developer:** Tran Huu Danh
 - **Developer:** Tran Nguyen Hien
