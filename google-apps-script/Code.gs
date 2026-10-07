@@ -11,7 +11,7 @@ var DEDUP_HEADERS = Object.freeze(["Key", "Status", "TargetRow", "Fingerprint", 
 // Fire-and-Forget co the tao nhieu Web App execution cung luc. Cho lock du lau
 // de request khong bi mat chi vi Master khong doc response BUSY.
 var TELEMETRY_LOCK_TIMEOUT_MS = 120000;
-var TELEMETRY_SERVICE_VERSION = "tower-telemetry-v5-email-alerts";
+var TELEMETRY_SERVICE_VERSION = "tower-telemetry-v7-sheet-email-reminders";
 
 var EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send";
 var EMAIL_ALERT_ENABLED_PROPERTY = "EMAIL_ALERT_ENABLED";
@@ -20,6 +20,7 @@ var EMAILJS_TEMPLATE_ID_PROPERTY = "EMAILJS_TEMPLATE_ID";
 var EMAILJS_PUBLIC_KEY_PROPERTY = "EMAILJS_PUBLIC_KEY";
 var EMAILJS_PRIVATE_KEY_PROPERTY = "EMAILJS_PRIVATE_KEY";
 var EMAIL_ALERT_TO_PROPERTY = "ALERT_EMAIL_TO";
+var ALERT_EMAIL_RECHECK_MINUTES_PROPERTY = "ALERT_EMAIL_RECHECK_MINUTES";
 
 var ALERT_INITIAL_X_PROPERTY = "ALERT_INITIAL_X";
 var ALERT_INITIAL_Y_PROPERTY = "ALERT_INITIAL_Y";
@@ -32,15 +33,14 @@ var ALERT_BATTERY_CRITICAL_PROPERTY = "ALERT_BATTERY_CRITICAL";
 
 var ALERT_ENGINE_STATE_PROPERTY = "TOWER_ALERT_ENGINE_STATE_V1";
 var ALERT_EMAIL_QUEUE_PROPERTY = "TOWER_ALERT_EMAIL_QUEUE_V1";
-var ALERT_LAST_EMAIL_ATTEMPT_PROPERTY = "TOWER_ALERT_LAST_EMAIL_ATTEMPT_AT";
 
 var ALERT_AVERAGE_WINDOW_SIZE = 3;
 var ALERT_MAXIMUM_WINDOW_GAP_MS = 90 * 60 * 1000;
 var ALERT_CRITICAL_MULTIPLIER = 1.5;
 var ALERT_RECENT_MESSAGE_ID_LIMIT = 96;
-var ALERT_EMAIL_QUEUE_LIMIT = 5;
+var ALERT_EMAIL_QUEUE_LIMIT = 2;
 var ALERT_EMAIL_SEND_LEASE_MS = 60 * 1000;
-var ALERT_EMAIL_RATE_LIMIT_MS = 1100;
+var ALERT_EMAIL_DEFAULT_RECHECK_MINUTES = 60;
 var ALERT_EMAIL_RETRY_BASE_MS = 60 * 1000;
 var ALERT_EMAIL_RETRY_MAX_MS = 15 * 60 * 1000;
 var ALERT_EMAIL_FETCH_TIMEOUT_SECONDS = 15;
@@ -70,6 +70,7 @@ function doGet() {
     var emailConfig = getEmailAlertConfig_(properties);
     status.emailAlertsEnabled = emailConfig.enabled;
     status.emailJsConfigured = emailConfig.configured;
+    status.emailRecheckMinutes = emailConfig.recheckMinutes;
 
     if (sheetId) {
       var spreadsheet = SpreadsheetApp.openById(sheetId);
@@ -1258,16 +1259,24 @@ function normalizeNumber_(value, minimum, maximum) {
 // -----------------------------------------------------------------------------
 //
 // Rules:
-// - Inclination: NORMAL -> WARNING at threshold, one mail; persistent WARNING
-//   does not mail again; escalation to CRITICAL (threshold * 1.5) mails once;
-//   CRITICAL is latched until the tower returns to NORMAL.
-// - Battery: NORMAL >= 12.8 V; active below 12.8 V. 10.0-<12.8 V is WARNING,
-//   <10.0 V is CRITICAL. One mail per low-battery episode; crossing from
-//   WARNING to CRITICAL does not create another mail until battery recovers.
-// - If more than one warning is active at the same transition, all current
-//   warnings are combined into one EmailJS request.
+// - Overall state is the higher severity of inclination and battery.
+// - Send immediately on NORMAL -> WARNING/CRITICAL or WARNING -> CRITICAL.
+//   CRITICAL -> WARNING does not send immediately; later WARNING -> CRITICAL
+//   sends again. No episode latch or anti-spam cooldown is used.
+// - While WARNING/CRITICAL persists, send current measurements again after
+//   ALERT_EMAIL_RECHECK_MINUTES (default 60) since the last successful send.
+// - NORMAL cancels pending emails and stops reminders. All active warnings
+//   are combined into one EmailJS request.
 // - Email sending is decoupled from telemetry writes via a small persistent
-//   queue + lease + retry backoff.
+//   queue + lease + retry backoff for provider failures only.
+//
+// Cai dat: them ALERT_EMAIL_RECHECK_MINUTES = 60 vao Thuoc tinh cua tap lenh.
+// Chay setupEmailAlertService() mot lan de bat mail va tao trigger moi phut.
+// Sau do chi sua thuoc tinh nay (so phut >= 1), khong can tao lai trigger.
+// Trigger doc Google Sheet TWR-01, lay toi da 3 mau hop le moi nhat theo
+// Date/Time (khong theo vi tri dong). Du lieu co san/nhap truc tiep van duoc
+// kiem tra. Mail ghi ro thoi gian mau cuoi cung, khong tao so do moi.
+// Chay diagnoseEmailAlertService() de xem trang thai va ly do chua gui mail.
 
 function setupEmailAlertService() {
   var properties = PropertiesService.getScriptProperties();
@@ -1279,6 +1288,8 @@ function setupEmailAlertService() {
   setDefaultScriptProperty_(properties, ALERT_TILT_Z_PROPERTY, "0.5");
   setDefaultScriptProperty_(properties, ALERT_BATTERY_WARNING_PROPERTY, "12.8");
   setDefaultScriptProperty_(properties, ALERT_BATTERY_CRITICAL_PROPERTY, "10.0");
+  setDefaultScriptProperty_(properties, ALERT_EMAIL_RECHECK_MINUTES_PROPERTY,
+    String(ALERT_EMAIL_DEFAULT_RECHECK_MINUTES));
 
   var config = getEmailAlertConfig_(properties);
   if (!config.configured) {
@@ -1287,8 +1298,12 @@ function setupEmailAlertService() {
     );
   }
 
+  // Validate the actual source before installing a timer. Setup preserves
+  // existing state and the reminder clock; it must not erase all readings.
+  var snapshot = loadLatestSheetAlertReadings_(config);
+  var current = assessCurrentEmailAlert_({ readings: snapshot.readings }, config);
+  setupEmailAlertTrigger_();
   properties.setProperty(EMAIL_ALERT_ENABLED_PROPERTY, "true");
-  resetEmailAlertState_();
 
   var result = {
     ok: true,
@@ -1298,6 +1313,11 @@ function setupEmailAlertService() {
     publicKeyConfigured: Boolean(config.publicKey),
     privateKeyConfigured: Boolean(config.privateKey),
     recipientConfigured: Boolean(config.toEmail),
+    recheckMinutes: config.recheckMinutes,
+    triggerHandler: "recheckEmailAlerts",
+    dataSource: "Google Sheets",
+    sampleCount: snapshot.readings.length,
+    currentLevel: current ? current.level : "normal",
     inclinationThresholds: config.inclination,
     battery: config.battery
   };
@@ -1320,8 +1340,18 @@ function resetEmailAlertState_() {
   var properties = PropertiesService.getScriptProperties();
   properties.setProperties({
     TOWER_ALERT_ENGINE_STATE_V1: JSON.stringify(defaultAlertEngineState_()),
-    TOWER_ALERT_EMAIL_QUEUE_V1: "[]",
-    TOWER_ALERT_LAST_EMAIL_ATTEMPT_AT: "0"
+    TOWER_ALERT_EMAIL_QUEUE_V1: "[]"
+  });
+}
+
+function setupEmailAlertTrigger_() {
+  var existingTriggers = ScriptApp.getProjectTriggers();
+  ScriptApp.newTrigger("recheckEmailAlerts").timeBased().everyMinutes(1).create();
+  existingTriggers.forEach(function (trigger) {
+    var handler = trigger.getHandlerFunction();
+    if (handler === "recheckEmailAlerts" || handler === "retryPendingEmailAlerts") {
+      ScriptApp.deleteTrigger(trigger);
+    }
   });
 }
 
@@ -1367,14 +1397,176 @@ function testEmailJsConnection() {
   return { ok: true };
 }
 
-// Optional time-driven trigger target. It only retries an already queued alert;
-// it never creates a new warning from its own schedule.
+// Keep old manually installed triggers compatible with the new reminder rules.
 function retryPendingEmailAlerts() {
-  return deliverNextPendingEmailAlert_();
+  return recheckEmailAlerts();
+}
+
+// Runs each minute; the Script Property controls when a reminder is due.
+// Read the Sheet even when data was entered manually or predates setup.
+function recheckEmailAlerts() {
+  try {
+    var result = deliverNextPendingEmailAlert_(true);
+    console.log("[ALERT][RECHECK] " + JSON.stringify(result));
+    return result;
+  } catch (error) {
+    console.error("[ALERT][RECHECK] " +
+      String(error && error.message ? error.message : error));
+    throw error;
+  }
+}
+
+// Read-only diagnostic for the editor. No HTTP email send, queue changes,
+// or credentials in its output. A running trigger alone does not prove mail.
+function diagnoseEmailAlertService() {
+  var properties = PropertiesService.getScriptProperties();
+  var result = { ok: false, service: TELEMETRY_SERVICE_VERSION, towerId: TELEMETRY_TOWER_ID };
+  try {
+    var config = getEmailAlertConfig_(properties);
+    var state = loadAlertEngineState_(properties);
+    var queue = loadEmailAlertQueue_(properties);
+    result.enabled = config.enabled;
+    result.recheckMinutes = config.recheckMinutes;
+    result.triggerInstalled = ScriptApp.getProjectTriggers().some(function (trigger) {
+      return trigger.getHandlerFunction() === "recheckEmailAlerts" ||
+        trigger.getHandlerFunction() === "retryPendingEmailAlerts";
+    });
+    result.missingProperties = [];
+    [
+      [EMAILJS_SERVICE_ID_PROPERTY, config.serviceId],
+      [EMAILJS_TEMPLATE_ID_PROPERTY, config.templateId],
+      [EMAILJS_PUBLIC_KEY_PROPERTY, config.publicKey],
+      [EMAIL_ALERT_TO_PROPERTY, config.toEmail],
+      ["SENSOR_SHEET_ID", config.sheetId]
+    ].forEach(function (entry) {
+      if (!entry[1]) {
+        result.missingProperties.push(entry[0]);
+      }
+    });
+    result.privateKeyConfigured = Boolean(config.privateKey);
+    result.calibration = config.calibration;
+    result.inclinationThresholds = config.inclination;
+    result.batteryThresholds = config.battery;
+    result.pendingEmails = queue.length;
+    result.lastEmailSentAt = state.lastEmailSentAt || null;
+    result.nextReminderAt = state.lastEmailSentAt > 0
+      ? state.lastEmailSentAt + config.recheckMinutes * 60 * 1000
+      : null;
+
+    if (!config.enabled) {
+      result.reason = "EMAIL_ALERT_DISABLED";
+    } else if (!config.configured) {
+      result.reason = "EMAILJS_NOT_CONFIGURED";
+    } else if (!config.sheetId) {
+      result.reason = "SENSOR_SHEET_NOT_CONFIGURED";
+    } else {
+      result.reason = "SHEET_READ_FAILED";
+      var snapshot = loadLatestSheetAlertReadings_(config);
+      var current = assessCurrentEmailAlert_({ readings: snapshot.readings }, config);
+      result.sampleCount = snapshot.readings.length;
+      result.validSheetRows = snapshot.validRows;
+      result.rejectedSheetRows = snapshot.rejectedRows;
+      result.currentLevel = current ? current.level : "normal";
+      result.latestSampleAt = current ? current.reading.date + " " + current.reading.time : null;
+      result.average = current ? current.average : null;
+      result.tiltComponents = current ? current.inclination.components : null;
+      result.batteryVoltage = current ? current.reading.battery : null;
+      result.lastSendError = queue.length > 0 ? queue[queue.length - 1].lastError || null : null;
+      result.ok = true;
+      result.reason = !current ? "NO_VALID_SHEET_READINGS"
+        : current.level === "normal" ? "NORMAL"
+          : queue.length > 0 ? "EMAIL_PENDING_OR_RETRYING"
+            : state.currentLevel === "normal" ||
+              (state.currentLevel === "warning" && current.level === "critical") ||
+              state.lastEmailSentAt === 0 || Date.now() >= result.nextReminderAt
+              ? "READY_TO_SEND" : "WAITING_RECHECK";
+    }
+  } catch (error) {
+    result.reason = result.reason || "INVALID_ALERT_CONFIGURATION";
+    result.error = String(error && error.message ? error.message : error);
+  }
+  console.log("[ALERT][DIAGNOSE] " + JSON.stringify(result));
+  return result;
+}
+
+function loadLatestSheetAlertReadings_(config) {
+  if (!config.sheetId) {
+    throw new Error("Set Script Property SENSOR_SHEET_ID before enabling email checks.");
+  }
+  var spreadsheet = SpreadsheetApp.openById(config.sheetId);
+  var sheet = spreadsheet.getSheetByName(TELEMETRY_TOWER_ID);
+  if (!sheet) {
+    throw new Error("Google Sheet " + TELEMETRY_TOWER_ID + " was not found for email checks.");
+  }
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 1 || sheet.getMaxColumns() < REQUIRED_HEADERS.length) {
+    throw new Error("TWR-01 columns A:F must be Date, Time, X, Y, Z, Battery.");
+  }
+  var indexes = { Date: 0, Time: 1, X: 2, Y: 3, Z: 4, Battery: 5 };
+  var timeZone = spreadsheet.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || "Asia/Ho_Chi_Minh";
+  var readings = [];
+  var validRows = 0;
+  var rejectedRows = 0;
+  // Scan all rows in bounded bulk chunks; keep only the newest three samples.
+  // Rows can be out of order because telemetry reuses blanks or is imported.
+  for (var startRow = 1; startRow <= lastRow; startRow += rowCount) {
+    var rowCount = Math.min(lastRow - startRow + 1, MAXIMUM_ROWS + (startRow === 1 ? 1 : 0));
+    var values = sheet.getRange(startRow, 1, rowCount, REQUIRED_HEADERS.length).getValues();
+    if (startRow === 1 && !REQUIRED_HEADERS.every(function (header, index) {
+      return String(values[0][index]).trim().toLowerCase() === header.toLowerCase();
+    })) {
+      throw new Error("TWR-01 columns A:F must be Date, Time, X, Y, Z, Battery.");
+    }
+    for (var index = startRow === 1 ? 1 : 0; index < values.length; index += 1) {
+      if (isBlankRow_(values[index], indexes)) {
+        continue;
+      }
+      var normalized = normalizeRow_(values[index], indexes, timeZone);
+      if (!normalized) {
+        rejectedRows += 1;
+        continue;
+      }
+      validRows += 1;
+      var reading = {
+        messageId: "sheet:" + (startRow + index),
+        date: normalized.Date, time: normalized.Time,
+        x: normalized.X, y: normalized.Y, z: normalized.Z, battery: normalized.Battery
+      };
+      reading.timestampMs = telemetryTimestampMs_(reading);
+      var existingIndex = readings.findIndex(function (sample) {
+        return sample.timestampMs === reading.timestampMs;
+      });
+      if (existingIndex >= 0) {
+        // Same rule as the browser: the last valid row at a timestamp wins.
+        readings[existingIndex] = reading;
+      } else {
+        readings.push(reading);
+      }
+      readings.sort(function (left, right) { return left.timestampMs - right.timestampMs; });
+      if (readings.length > ALERT_AVERAGE_WINDOW_SIZE) {
+        readings.shift();
+      }
+    }
+  }
+  // The rolling average starts over after a >90-minute sample gap.
+  for (var index = readings.length - 1; index > 0; index -= 1) {
+    if (readings[index].timestampMs - readings[index - 1].timestampMs > ALERT_MAXIMUM_WINDOW_GAP_MS) {
+      readings = readings.slice(index);
+      break;
+    }
+  }
+  return { readings: readings, validRows: validRows, rejectedRows: rejectedRows };
 }
 
 function getEmailAlertConfig_(properties) {
-  var source = properties || PropertiesService.getScriptProperties();
+  // Read config in one service call: a minute trigger must not spend dozens
+  // of PropertiesService calls while idle. Values remain fresh each execution.
+  var snapshot = (properties || PropertiesService.getScriptProperties()).getProperties();
+  var source = {
+    getProperty: function (key) {
+      return Object.prototype.hasOwnProperty.call(snapshot, key) ? snapshot[key] : null;
+    }
+  };
 
   var config = {
     enabled: parseBooleanProperty_(
@@ -1386,6 +1578,11 @@ function getEmailAlertConfig_(properties) {
     publicKey: String(source.getProperty(EMAILJS_PUBLIC_KEY_PROPERTY) || "").trim(),
     privateKey: String(source.getProperty(EMAILJS_PRIVATE_KEY_PROPERTY) || "").trim(),
     toEmail: String(source.getProperty(EMAIL_ALERT_TO_PROPERTY) || "").trim(),
+    sheetId: String(source.getProperty("SENSOR_SHEET_ID") || "").trim(),
+    recheckMinutes: finitePropertyNumber_(
+      source, ALERT_EMAIL_RECHECK_MINUTES_PROPERTY,
+      ALERT_EMAIL_DEFAULT_RECHECK_MINUTES, 1, 525600
+    ),
     calibration: {
       x: finitePropertyNumber_(source, ALERT_INITIAL_X_PROPERTY, 0, -180, 180),
       y: finitePropertyNumber_(source, ALERT_INITIAL_Y_PROPERTY, 0, -180, 180),
@@ -1456,9 +1653,9 @@ function finitePropertyNumber_(properties, key, fallback, minimum, maximum) {
 
 function defaultAlertEngineState_() {
   return {
-    version: 1,
-    inclinationEpisodePeak: "normal",
-    batteryEpisodeActive: false,
+    version: 2,
+    currentLevel: "normal",
+    lastEmailSentAt: 0,
     lastEvaluatedTimestampMs: 0,
     readings: [],
     recentMessageIds: []
@@ -1475,11 +1672,13 @@ function loadAlertEngineState_(properties) {
     var parsed = JSON.parse(raw);
     var state = defaultAlertEngineState_();
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      if (parsed.inclinationEpisodePeak === "warning" ||
-          parsed.inclinationEpisodePeak === "critical") {
-        state.inclinationEpisodePeak = parsed.inclinationEpisodePeak;
+      if (parsed.currentLevel === "warning" || parsed.currentLevel === "critical") {
+        state.currentLevel = parsed.currentLevel;
       }
-      state.batteryEpisodeActive = Boolean(parsed.batteryEpisodeActive);
+      state.lastEmailSentAt =
+        Number.isFinite(Number(parsed.lastEmailSentAt)) && Number(parsed.lastEmailSentAt) >= 0
+          ? Number(parsed.lastEmailSentAt)
+          : 0;
       state.lastEvaluatedTimestampMs =
         Number.isFinite(Number(parsed.lastEvaluatedTimestampMs)) &&
         Number(parsed.lastEvaluatedTimestampMs) >= 0
@@ -1601,6 +1800,19 @@ function applyTelemetryToAlertState_(telemetry, state, queue, config) {
     return { state: state, queue: queue, changed: false };
   }
 
+  // A distinct Message ID can share a timestamp and reuse an earlier blank
+  // row. Resolve these uncommon ties from the Sheet, where the last physical
+  // row wins, rather than counting twice or choosing by arrival order.
+  if (state.readings.some(function (sample) {
+    return sample.timestampMs === timestampMs;
+  })) {
+    var snapshot = loadLatestSheetAlertReadings_(config);
+    state.readings = snapshot.readings;
+    state.lastEvaluatedTimestampMs = state.readings.length > 0
+      ? state.readings[state.readings.length - 1].timestampMs : 0;
+    return evaluateEmailAlertState_(state, queue, config, Date.now());
+  }
+
   var reading = {
     messageId: String(telemetry.messageId),
     timestampMs: timestampMs,
@@ -1620,7 +1832,6 @@ function applyTelemetryToAlertState_(telemetry, state, queue, config) {
     state.readings = [];
   }
 
-  // Same timestamp is permitted, but a Message ID is only inserted once.
   state.readings.push(reading);
   state.readings.sort(function (left, right) {
     return left.timestampMs - right.timestampMs;
@@ -1633,6 +1844,14 @@ function applyTelemetryToAlertState_(telemetry, state, queue, config) {
     timestampMs
   );
 
+  return evaluateEmailAlertState_(state, queue, config, Date.now());
+}
+
+function assessCurrentEmailAlert_(state, config) {
+  if (state.readings.length === 0) {
+    return null;
+  }
+  var reading = state.readings[state.readings.length - 1];
   var average = calculateAlertAverage_(state.readings, config.calibration);
   var inclination = assessEmailInclination_(
     average,
@@ -1640,51 +1859,43 @@ function applyTelemetryToAlertState_(telemetry, state, queue, config) {
     config.calibration
   );
   var battery = assessEmailBattery_(reading.battery, config.battery);
+  var level = inclination.level === "critical" || battery.level === "critical"
+    ? "critical"
+    : inclination.level === "warning" || battery.level === "warning"
+      ? "warning"
+      : "normal";
+  return {
+    reading: reading,
+    average: average,
+    level: level,
+    warnings: buildActiveEmailWarnings_(inclination, battery, config),
+    inclination: inclination
+  };
+}
 
-  var inclinationShouldNotify = false;
-  if (inclination.level === "normal") {
-    state.inclinationEpisodePeak = "normal";
-  } else if (state.inclinationEpisodePeak === "normal") {
-    state.inclinationEpisodePeak = inclination.level;
-    inclinationShouldNotify = true;
-  } else if (state.inclinationEpisodePeak === "warning" &&
-             inclination.level === "critical") {
-    state.inclinationEpisodePeak = "critical";
-    inclinationShouldNotify = true;
+function evaluateEmailAlertState_(state, queue, config, now) {
+  var current = assessCurrentEmailAlert_(state, config);
+  var previousLevel = state.currentLevel;
+  state.currentLevel = current ? current.level : "normal";
+  if (state.currentLevel === "normal") {
+    state.lastEmailSentAt = 0;
+    return { state: state, queue: [], changed: false };
   }
-  // If a CRITICAL episode temporarily drops to WARNING, keep CRITICAL latched
-  // until NORMAL so repeated crossings around 0.75 degrees cannot spam email.
 
-  var batteryShouldNotify = false;
-  if (!battery.active) {
-    state.batteryEpisodeActive = false;
-  } else if (!state.batteryEpisodeActive) {
-    state.batteryEpisodeActive = true;
-    batteryShouldNotify = true;
-  }
-  // Intentionally no Battery WARNING -> CRITICAL escalation email. The whole
-  // <12.8 V period is one battery-warning episode, exactly as requested.
-
-  var changed = inclinationShouldNotify || batteryShouldNotify;
+  var transition = previousLevel === "normal" ||
+    (previousLevel === "warning" && state.currentLevel === "critical");
+  var reminderDue = state.lastEmailSentAt > 0 &&
+    now - state.lastEmailSentAt >= config.recheckMinutes * 60 * 1000;
+  // A pending/retrying/in-flight email already covers this reminder. A new
+  // escalation replaces a pending snapshot so it can be sent immediately.
+  var changed = transition ||
+    (queue.length === 0 && (state.lastEmailSentAt === 0 || reminderDue));
   if (changed) {
-    var activeWarnings = buildActiveEmailWarnings_(
-      inclination,
-      battery,
-      config
-    );
-    if (activeWarnings.length > 0) {
-      queue = enqueueEmailAlert_(
-        queue,
-        buildEmailAlertEvent_(
-          reading,
-          average,
-          activeWarnings,
-          config
-        )
-      );
-    }
+    queue = enqueueEmailAlert_(queue, buildEmailAlertEvent_(
+      current.reading, current.average, current.warnings, config,
+      transition || state.lastEmailSentAt === 0 ? "transition" : "reminder"
+    ));
   }
-
   return { state: state, queue: queue, changed: changed };
 }
 
@@ -1822,7 +2033,7 @@ function buildActiveEmailWarnings_(inclination, battery, config) {
   return warnings;
 }
 
-function buildEmailAlertEvent_(reading, average, warnings, config) {
+function buildEmailAlertEvent_(reading, average, warnings, config, reason) {
   var overallSeverity = warnings.some(function (warning) {
     return warning.severity === "CRITICAL";
   }) ? "CRITICAL" : "WARNING";
@@ -1832,9 +2043,7 @@ function buildEmailAlertEvent_(reading, average, warnings, config) {
     subject = "[" + warnings[0].severity + "] " +
       TELEMETRY_TOWER_ID + " - " + warnings[0].title;
   } else {
-    // Keep the grouped subject format requested by the project owner. The
-    // body still reports the actual overall severity (including CRITICAL).
-    subject = "[WARNING] " + TELEMETRY_TOWER_ID + " - " +
+    subject = "[" + overallSeverity + "] " + TELEMETRY_TOWER_ID + " - " +
       warnings.length + " Active Warnings";
   }
 
@@ -1886,10 +2095,14 @@ function buildEmailAlertEvent_(reading, average, warnings, config) {
     "Detected: " + detectedAt,
     "Severity: " + overallSeverity,
     "Active warnings: " + warnings.length,
+    "Notification: " + (reason === "reminder" ? "Periodic reminder" : "State transition"),
     "",
     warningSections.join("\n\n"),
     "",
     "Current measurements:",
+    "Latest X: " + Number(reading.x).toFixed(2) + "°",
+    "Latest Y: " + Number(reading.y).toFixed(2) + "°",
+    "Latest Z: " + Number(reading.z).toFixed(2) + "°",
     "Average X: " + average.x.toFixed(2) + "°",
     "Average Y: " + average.y.toFixed(2) + "°",
     "Average Z: " + average.z.toFixed(2) + "°",
@@ -1898,6 +2111,7 @@ function buildEmailAlertEvent_(reading, average, warnings, config) {
 
   return {
     id: Utilities.getUuid(),
+    reason: reason || "transition",
     status: "pending",
     createdAt: Date.now(),
     attempts: 0,
@@ -1911,11 +2125,15 @@ function buildEmailAlertEvent_(reading, average, warnings, config) {
       tower_id: TELEMETRY_TOWER_ID,
       detected_at: detectedAt,
       severity: overallSeverity,
+      alert_reason: reason || "transition",
       alert_count: String(warnings.length),
       alert_message: warningSections.join("\n\n"),
       avg_x: average.x.toFixed(2),
       avg_y: average.y.toFixed(2),
       avg_z: average.z.toFixed(2),
+      current_x: Number(reading.x).toFixed(2),
+      current_y: Number(reading.y).toFixed(2),
+      current_z: Number(reading.z).toFixed(2),
       battery: Number(reading.battery).toFixed(2)
     }
   };
@@ -1947,13 +2165,12 @@ function loadEmailAlertQueue_(properties) {
 }
 
 function enqueueEmailAlert_(queue, event) {
-  var nextQueue = queue.slice();
-  if (nextQueue.length >= ALERT_EMAIL_QUEUE_LIMIT) {
-    // Alert transitions are rare. If EmailJS is unavailable for a long time,
-    // retain the oldest undelivered events and replace the newest slot with
-    // the latest state rather than allowing Script Properties to grow forever.
-    nextQueue = nextQueue.slice(0, ALERT_EMAIL_QUEUE_LIMIT - 1);
-  }
+  // Keep a currently sending event so its completion token remains valid,
+  // plus at most one pending notification representing the current state.
+  var now = Date.now();
+  var nextQueue = queue.filter(function (queued) {
+    return queued.status === "sending" && Number(queued.leaseUntil || 0) > now;
+  }).slice(0, 1);
   nextQueue.push(event);
   return nextQueue;
 }
@@ -1965,14 +2182,14 @@ function persistAlertStateAndQueue_(properties, state, queue) {
   properties.setProperties(values);
 }
 
-function deliverNextPendingEmailAlert_() {
+function deliverNextPendingEmailAlert_(refreshFromSheet) {
   var properties = PropertiesService.getScriptProperties();
   var config = getEmailAlertConfig_(properties);
   if (!config.enabled || !config.configured) {
     return { ok: false, skipped: true, reason: "EMAIL_ALERT_DISABLED_OR_NOT_CONFIGURED" };
   }
 
-  var lease = leaseNextEmailAlert_(properties);
+  var lease = leaseNextEmailAlert_(properties, config, refreshFromSheet);
   if (!lease) {
     return { ok: true, skipped: true, reason: "NO_ELIGIBLE_EMAIL" };
   }
@@ -1992,7 +2209,7 @@ function deliverNextPendingEmailAlert_() {
   return { ok: true, sent: true, eventId: lease.event.id };
 }
 
-function leaseNextEmailAlert_(properties) {
+function leaseNextEmailAlert_(properties, config, refreshFromSheet) {
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) {
     return null;
@@ -2000,15 +2217,38 @@ function leaseNextEmailAlert_(properties) {
 
   try {
     var now = Date.now();
-    var lastAttempt = Number(
-      properties.getProperty(ALERT_LAST_EMAIL_ATTEMPT_PROPERTY) || 0
-    );
-    if (isFinite(lastAttempt) &&
-        now - lastAttempt < ALERT_EMAIL_RATE_LIMIT_MS) {
+    config = config || getEmailAlertConfig_(properties);
+    var state = loadAlertEngineState_(properties);
+    if (refreshFromSheet) {
+      var snapshot = loadLatestSheetAlertReadings_(config);
+      state.readings = snapshot.readings;
+      state.lastEvaluatedTimestampMs = state.readings.length > 0
+        ? state.readings[state.readings.length - 1].timestampMs : 0;
+    }
+    var result = evaluateEmailAlertState_(state, loadEmailAlertQueue_(properties), config, now);
+    var queue = result.queue;
+    persistAlertStateAndQueue_(properties, result.state, queue);
+    console.log("[ALERT][CHECK] " + JSON.stringify({
+      source: refreshFromSheet ? "Google Sheets" : "Telemetry",
+      currentLevel: state.currentLevel,
+      sampleCount: state.readings.length,
+      latestSampleAt: state.readings.length > 0
+        ? state.readings[state.readings.length - 1].date + " " + state.readings[state.readings.length - 1].time : null,
+      recheckMinutes: config.recheckMinutes,
+      lastEmailSentAt: state.lastEmailSentAt || null,
+      pendingEmails: queue.length
+    }));
+    // A lease protects against overlapping web requests and timer executions;
+    // it is not a cooldown and never suppresses a later state transition.
+    if (queue.some(function (event) {
+      return event.status === "sending" && Number(event.leaseUntil || 0) > now;
+    })) {
       return null;
     }
-
-    var queue = loadEmailAlertQueue_(properties);
+    // A failed/expired older send may coexist with a newer escalation. Once
+    // no send is active, only the latest notification should be delivered.
+    queue = queue.slice(-1);
+    properties.setProperty(ALERT_EMAIL_QUEUE_PROPERTY, JSON.stringify(queue));
     var eventIndex = -1;
     for (var index = 0; index < queue.length; index += 1) {
       var event = queue[index];
@@ -2026,14 +2266,16 @@ function leaseNextEmailAlert_(properties) {
     }
 
     var token = Utilities.getUuid();
+    var current = assessCurrentEmailAlert_(result.state, config);
+    // Rebuild on every attempt: never resend stale values from an old event.
+    queue[eventIndex].templateParams = buildEmailAlertEvent_(
+      current.reading, current.average, current.warnings, config, queue[eventIndex].reason
+    ).templateParams;
     queue[eventIndex].status = "sending";
     queue[eventIndex].leaseToken = token;
     queue[eventIndex].leaseUntil = now + ALERT_EMAIL_SEND_LEASE_MS;
 
-    var updates = {};
-    updates[ALERT_EMAIL_QUEUE_PROPERTY] = JSON.stringify(queue);
-    updates[ALERT_LAST_EMAIL_ATTEMPT_PROPERTY] = String(now);
-    properties.setProperties(updates);
+    properties.setProperty(ALERT_EMAIL_QUEUE_PROPERTY, JSON.stringify(queue));
 
     return {
       token: token,
@@ -2063,7 +2305,11 @@ function finishEmailAlertLease_(eventId, token, error) {
 
     if (!error) {
       queue.splice(index, 1);
-      properties.setProperty(ALERT_EMAIL_QUEUE_PROPERTY, JSON.stringify(queue));
+      var state = loadAlertEngineState_(properties);
+      if (state.currentLevel !== "normal") {
+        state.lastEmailSentAt = Date.now();
+      }
+      persistAlertStateAndQueue_(properties, state, queue);
       console.log("[ALERT][EMAIL] Sent event " + eventId);
       return;
     }
@@ -2096,7 +2342,13 @@ function sendEmailJsAlert_(config, templateParams) {
     service_id: config.serviceId,
     template_id: config.templateId,
     user_id: config.publicKey,
-    template_params: templateParams
+    // Also fill the standard variables present in the owner's EmailJS
+    // template (including its Reply To field) for tests and real alerts.
+    template_params: Object.assign({
+      name: "Tower Inclination Monitoring System",
+      time: templateParams.detected_at || "",
+      email: config.toEmail
+    }, templateParams)
   };
   if (config.privateKey) {
     payload.accessToken = config.privateKey;
