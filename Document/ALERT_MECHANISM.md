@@ -1,8 +1,4 @@
 # Cơ Chế Hoạt Động Của Hệ Thống Cảnh Báo (Alert Mechanism)
-> **Dự án:** Tower Inclination Monitoring System (Hệ thống giám sát độ nghiêng tháp)  
-> **Tài liệu kỹ thuật:** Giải thích chi tiết thuật toán phát hiện cảnh báo, vòng đời sự kiện, trạng thái hiển thị trên giao diện và luồng thông báo EmailJS.
-
----
 
 ## 1. Tổng quan hệ thống cảnh báo
 
