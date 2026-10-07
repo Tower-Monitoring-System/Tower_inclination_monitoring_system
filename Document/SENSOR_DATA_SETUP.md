@@ -84,14 +84,34 @@ The repository's `supabase/config.toml` enables gateway JWT verification for `se
 The frontend configuration is in `js/core/config.js` under `SENSOR_DATA_CONFIG`:
 
 - `edgeFunctionName`: deployed function name, normally `sensor-data`.
-- `requestTimeoutMs`: browser request timeout.
-- `pollingIntervalMs`: refresh interval while the List page is open (default 45 seconds).
+- `requestTimeoutMs`: browser request timeout (35 seconds, allowing for the Edge Function's 25-second Apps Script timeout).
+- `pollingIntervalMs`: shared refresh interval (default 15 seconds after each completed request).
+- `cacheTtlMs`: reuse successful browser snapshots during navigation (default 15 seconds).
 - `pageSize`: rows displayed on each page.
 - Battery warning/critical voltage thresholds.
 
 The Towers page sends its selected `towerId` in the authenticated request. Do not put a Tower ID or Sheet name in frontend source code. The Tower Registry is persisted through `towerRegistryRepository.js` and is the only source for the Towers selector.
 
 Do not add the Apps Script URL or shared secret to this file. The existing public Supabase URL and publishable key remain in `js/core/supabaseConfig.js`.
+
+Towers, List, and Alerts share one `SensorDataService`. Each selected Tower has one request and polling timer; closing a dashboard page cancels only that page's wait, while other pages continue receiving the same validated readings. Polling pauses when the browser tab is hidden and checks again when it becomes visible or the connection returns. Temporary failures keep the last successful readings visible with an error, and retry after 2, 4, 8, then at most 15 seconds. Authentication/access errors require signing in or fixing access.
+
+Manual **Refresh** bypasses the browser cache. The authenticated Edge Function may reuse a successful Apps Script response for up to 3 seconds within the same worker. Uncached reads scan Sheet rows in batches and return the newest 20,000 valid unique timestamps, rather than the first 20,000 physical rows. The last valid physical row wins when timestamps repeat. Earlier history stays in Google Sheets; it is outside the website's bounded history window. `meta.truncated` identifies this limit.
+
+A static website updates while its tab is running. Server-side email checks still use the independent Apps Script trigger when the website is closed.
+
+### Apply this update to an existing deployment
+
+1. Copy the updated `google-apps-script/Code.gs` to Apps Script, save it, and update the existing Web App deployment with a **new version**. Keep its `/exec` URL when editing that deployment.
+2. Deploy the updated `supabase/functions/sensor-data/index.ts` with `supabase functions deploy sensor-data`.
+3. Publish the updated `index.html` and `js/` files to GitHub Pages. The module version `20261007.1` requests the new frontend files.
+4. Reload the website and open Towers directly. Check Alerts before visiting List, then verify new Sheet samples appear without switching pages.
+
+### Local regression checks
+
+Run `node --disable-warning=ExperimentalWarning --test` with Node.js 24 or newer. Tests substitute only external services; they send no live mail and change no live Sheets.
+
+The optional full DOM/Canvas check uses Playwright: `node tests/browser-smoke.cjs`. If Playwright's Chromium is unavailable, pass the Playwright package path and a Chrome executable as the second and third command-line arguments. This check serves the actual frontend locally and intercepts all external requests with fixtures.
 
 ## 5. Verify the complete flow
 

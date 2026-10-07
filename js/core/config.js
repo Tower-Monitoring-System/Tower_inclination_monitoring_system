@@ -18,8 +18,9 @@ export const AUTH_CONFIG = Object.freeze({
 
 export const SENSOR_DATA_CONFIG = Object.freeze({
   edgeFunctionName: "sensor-data",
-  requestTimeoutMs: 12000,
-  pollingIntervalMs: 45000,
+  requestTimeoutMs: 35000,
+  pollingIntervalMs: 15000,
+  cacheTtlMs: 15000,
   pageSize: 20,
   maximumRecords: 20000
 });

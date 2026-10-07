@@ -1,4 +1,4 @@
-import { SENSOR_DATA_CONFIG } from "../core/config.js";
+import { SENSOR_DATA_CONFIG } from "../core/config.js?v=20261007.1";
 import { createAlertConfiguration } from "../core/settingsDefaults.js?v=20260902.1";
 import {
   filterSensorReadings,
@@ -183,12 +183,12 @@ export class ListPage {
     if (this.refreshPromise) {
       void this.refreshPromise.finally(() => {
         if (this.active) {
-          void this.refresh({ automatic: this.records.length > 0 });
+          void this.refresh({ automatic: true });
         }
       });
       return;
     }
-    void this.refresh({ automatic: this.records.length > 0 });
+    void this.refresh({ automatic: true });
   }
 
   close() {
@@ -239,12 +239,14 @@ export class ListPage {
 
   cancelRefresh() {
     this.requestSequence += 1;
-    this.service.cancelActiveRequest();
+    this.dataRequestController?.abort();
+    this.dataRequestController = null;
     this.refreshPromise = null;
     this.loading = false;
   }
 
   resetTowerData() {
+    this.unsubscribeReadings?.();
     this.clearPollingTimer();
     this.cancelRefresh();
     this.records = [];
@@ -252,6 +254,25 @@ export class ListPage {
     this.currentPage = 1;
     this.error = null;
     this.filterTouched = false;
+    const towerId = this.selectedTowerId;
+    this.unsubscribeReadings = this.service.subscribe?.(towerId, update => {
+      if (towerId !== this.selectedTowerId) return;
+      if (update.result) this.acceptReadings(update.result);
+      this.error = update.error?.message || null;
+      this.render();
+    });
+  }
+
+  acceptReadings(result) {
+    this.records = result.readings;
+    this.invalidRowCount = result.invalidRows.length;
+    const latestDate = getLatestReadingDate(this.records);
+    if (!this.filterTouched && latestDate) {
+      this.selectedDate = latestDate;
+      this.customEnd = latestDate;
+      this.customStart = shiftIsoDate(latestDate, -2);
+    }
+    this.syncPickerValues();
   }
 
   changePeriod(period) {
@@ -336,6 +357,8 @@ export class ListPage {
 
     const towerId = this.selectedTowerId;
     const requestSequence = ++this.requestSequence;
+    const controller = new AbortController();
+    this.dataRequestController = controller;
     this.clearPollingTimer();
     this.loading = true;
     this.error = null;
@@ -343,19 +366,11 @@ export class ListPage {
 
     const refreshPromise = (async () => {
       try {
-        const result = await this.service.fetchReadings({ towerId });
+        const result = await this.service.fetchReadings({ towerId, signal: controller.signal, force: !automatic });
         if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
           return;
         }
-        this.records = [...result.readings];
-        this.invalidRowCount = result.invalidRows.length;
-        const latestDate = getLatestReadingDate(this.records);
-        if (!this.filterTouched && latestDate) {
-          this.selectedDate = latestDate;
-          this.customEnd = latestDate;
-          this.customStart = shiftIsoDate(latestDate, -2);
-        }
-        this.syncPickerValues();
+        this.acceptReadings(result);
         this.error = null;
 
         if (result.invalidRows.length) {
@@ -373,10 +388,6 @@ export class ListPage {
         }
         if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
           return;
-        }
-        if (error?.status === 404) {
-          this.records = [];
-          this.invalidRowCount = 0;
         }
         const timedOut = error?.name === "TimeoutError";
         this.error = timedOut
@@ -405,13 +416,17 @@ export class ListPage {
   }
 
   getFilteredReadings() {
+    const key = [this.period, this.selectedDate, this.customStart, this.customEnd, this.sortField, this.sortDirection].join("|");
+    if (this.filteredCache?.records === this.records && this.filteredCache.key === key) return this.filteredCache.readings;
     const selectedValue = this.period === "custom"
       ? { from: this.customStart, to: this.customEnd }
       : this.period === "day"
         ? this.selectedDate
         : this.selectedDate.slice(0, 7);
     const filtered = filterSensorReadings(this.records, this.period, selectedValue);
-    return sortSensorReadings(filtered, this.sortField, this.sortDirection);
+    const readings = sortSensorReadings(filtered, this.sortField, this.sortDirection);
+    this.filteredCache = { records: this.records, key, readings };
+    return readings;
   }
 
   render() {
@@ -641,6 +656,7 @@ export class ListPage {
 
   schedulePolling() {
     this.clearPollingTimer();
+    if (this.service.subscribe) return;
     if (!this.active || !this.selectedTowerId) {
       return;
     }
@@ -662,6 +678,7 @@ export class ListPage {
   }
 
   handleVisibilityChange() {
+    if (this.service.subscribe) return;
     if (!this.active || !this.selectedTowerId) {
       return;
     }
@@ -686,6 +703,6 @@ export class ListPage {
     this.abortController.abort();
     this.unsubscribeSettings?.();
     this.unsubscribeTowerRegistry?.();
-    this.service.destroy();
+    this.unsubscribeReadings?.();
   }
 }

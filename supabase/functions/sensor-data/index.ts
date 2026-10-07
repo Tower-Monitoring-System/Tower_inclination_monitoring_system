@@ -14,8 +14,18 @@ const LOCAL_DATE_PATTERN = /^(\d{2})\/(\d{2})\/(\d{4})$/;
 const TIME_PATTERN = /^(\d{2}):(\d{2})(?::(\d{2}))?$/;
 const INVALID_SHEET_NAME_PATTERN = /[:\\/?*\[\]]/;
 const MAXIMUM_ROWS = 20000;
-const UPSTREAM_TIMEOUT_MS = 10000;
+const UPSTREAM_TIMEOUT_MS = 25000;
+const CACHE_TTL_MS = 3000;
+const CACHE_MAX_ENTRIES = 4;
+const CACHE_MAX_BYTES = 8_000_000;
+const MAXIMUM_IN_FLIGHT_KEYS = 16;
 const ALLOWED_ROLES = new Set(["owner", "operator"]);
+type SensorDataResult = { body: string; status: number };
+type CachedResult = { result: SensorDataResult; expiresAt: number; bytes: number };
+// Isolate-local only. Authorization is checked afresh before either map is used.
+const successfulReads = new Map<string, CachedResult>();
+const inFlightReads = new Map<string, Promise<SensorDataResult>>();
+let cachedBytes = 0;
 
 function getCorsOrigin(request: Request) {
   const requestOrigin = request.headers.get("origin") || "";
@@ -49,6 +59,64 @@ function jsonResponse(body: Record<string, unknown>, status: number, corsOrigin:
     status,
     headers: responseHeaders(corsOrigin)
   });
+}
+
+function sensorDataResult(body: Record<string, unknown>, status: number): SensorDataResult {
+  return { body: JSON.stringify(body), status };
+}
+
+function removeCachedRead(key: string) {
+  const cached = successfulReads.get(key);
+  if (cached) {
+    cachedBytes -= cached.bytes;
+    successfulReads.delete(key);
+  }
+}
+
+async function readSensorData(cacheKey: string, appsScriptUrl: string, sharedSecret: string, towerId: string) {
+  const now = Date.now();
+  for (const [key, cached] of successfulReads) {
+    if (cached.expiresAt <= now) {
+      removeCachedRead(key);
+    }
+  }
+  const cached = successfulReads.get(cacheKey);
+  if (cached) {
+    return cached.result;
+  }
+  const pending = inFlightReads.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+
+  const read = fetchSensorData(appsScriptUrl, sharedSecret, towerId).then((result) => {
+    // Count UTF-16 storage conservatively; failed and oversized responses are never retained.
+    const bytes = result.body.length * 2;
+    if (result.status === 200 && bytes <= CACHE_MAX_BYTES) {
+      removeCachedRead(cacheKey);
+      while (successfulReads.size >= CACHE_MAX_ENTRIES || cachedBytes + bytes > CACHE_MAX_BYTES) {
+        const oldestKey = successfulReads.keys().next().value;
+        if (oldestKey === undefined) break;
+        removeCachedRead(oldestKey);
+      }
+      successfulReads.set(cacheKey, { result, expiresAt: Date.now() + CACHE_TTL_MS, bytes });
+      cachedBytes += bytes;
+    }
+    return result;
+  });
+  // Bound bookkeeping when many different tower requests arrive together. The
+  // overflow request still works, but is not retained for request coalescing.
+  const tracked = inFlightReads.size < MAXIMUM_IN_FLIGHT_KEYS;
+  if (tracked) {
+    inFlightReads.set(cacheKey, read);
+  }
+  try {
+    return await read;
+  } finally {
+    if (tracked && inFlightReads.get(cacheKey) === read) {
+      inFlightReads.delete(cacheKey);
+    }
+  }
 }
 
 function normalizeDate(value: unknown) {
@@ -209,6 +277,14 @@ Deno.serve(async (request) => {
     towerId = validation.towerId;
   }
 
+  // Include all configuration that can change the source or authorization
+  // context. Default-sheet reads and explicitly named towers stay separate.
+  const cacheKey = JSON.stringify([supabaseUrl, serviceRoleKey, appsScriptUrl, sharedSecret, towerId]);
+  const result = await readSensorData(cacheKey, appsScriptUrl, sharedSecret, towerId);
+  return new Response(result.body, { status: result.status, headers: responseHeaders(corsOrigin) });
+});
+
+async function fetchSensorData(appsScriptUrl: string, sharedSecret: string, towerId: string): Promise<SensorDataResult> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   try {
@@ -223,19 +299,19 @@ Deno.serve(async (request) => {
       signal: controller.signal
     });
     if (!upstreamResponse.ok) {
-      return jsonResponse({ ok: false, error: "Sensor data source is unavailable." }, 502, corsOrigin);
+      return sensorDataResult({ ok: false, error: "Sensor data source is unavailable." }, 502);
     }
 
     const responseText = await upstreamResponse.text();
     if (responseText.length > 5_000_000) {
-      return jsonResponse({ ok: false, error: "Sensor data response is too large." }, 502, corsOrigin);
+      return sensorDataResult({ ok: false, error: "Sensor data response is too large." }, 502);
     }
 
     let upstreamPayload: unknown;
     try {
       upstreamPayload = JSON.parse(responseText);
     } catch {
-      return jsonResponse({ ok: false, error: "Sensor data source returned an invalid response." }, 502, corsOrigin);
+      return sensorDataResult({ ok: false, error: "Sensor data source returned an invalid response." }, 502);
     }
 
     const payload = upstreamPayload as {
@@ -243,7 +319,7 @@ Deno.serve(async (request) => {
       data?: unknown;
       error?: unknown;
       errorCode?: unknown;
-      meta?: { towerId?: unknown };
+      meta?: { towerId?: unknown; truncated?: unknown };
     };
     if (!payload || payload.ok !== true) {
       const errorCode = typeof payload?.errorCode === "string" ? payload.errorCode : "UPSTREAM_ERROR";
@@ -251,21 +327,21 @@ Deno.serve(async (request) => {
         ? payload.error
         : "Sensor data source returned an invalid response.";
       const status = errorCode === "SHEET_NOT_FOUND" ? 404 : errorCode === "INVALID_TOWER_ID" ? 400 : 502;
-      return jsonResponse({ ok: false, error: upstreamMessage, errorCode }, status, corsOrigin);
+      return sensorDataResult({ ok: false, error: upstreamMessage, errorCode }, status);
     }
     if (!Array.isArray(payload.data)) {
-      return jsonResponse({ ok: false, error: "Sensor data source returned an invalid response." }, 502, corsOrigin);
+      return sensorDataResult({ ok: false, error: "Sensor data source returned an invalid response." }, 502);
     }
     if (payload.data.length > MAXIMUM_ROWS) {
-      return jsonResponse({ ok: false, error: "Sensor data response is too large." }, 502, corsOrigin);
+      return sensorDataResult({ ok: false, error: "Sensor data response is too large." }, 502);
     }
 
     const data = payload.data.map(normalizeRow).filter((row): row is SensorRow => row !== null);
     if (payload.data.length > 0 && data.length === 0) {
-      return jsonResponse({ ok: false, error: "Sensor data source contains no valid rows." }, 502, corsOrigin);
+      return sensorDataResult({ ok: false, error: "Sensor data source contains no valid rows." }, 502);
     }
 
-    return jsonResponse(
+    return sensorDataResult(
       {
         ok: true,
         data,
@@ -274,19 +350,21 @@ Deno.serve(async (request) => {
           accepted: data.length,
           rejected: payload.data.length - data.length,
           generatedAt: new Date().toISOString(),
+          truncated: payload.meta?.truncated === true,
           towerId: typeof payload.meta?.towerId === "string" ? payload.meta.towerId : towerId || null
         }
       },
-      200,
-      corsOrigin
+      200
     );
   } catch (error) {
     console.error(
       "sensor-data upstream request failed",
       error instanceof Error ? error.name : "UnknownError"
     );
-    return jsonResponse({ ok: false, error: "Sensor data source is unavailable." }, 502, corsOrigin);
+    return controller.signal.aborted
+      ? sensorDataResult({ ok: false, error: "Sensor data source timed out.", errorCode: "UPSTREAM_TIMEOUT" }, 504)
+      : sensorDataResult({ ok: false, error: "Sensor data source is unavailable." }, 502);
   } finally {
     clearTimeout(timeoutId);
   }
-});
+}

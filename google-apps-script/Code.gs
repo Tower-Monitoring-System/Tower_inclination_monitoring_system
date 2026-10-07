@@ -1,5 +1,6 @@
 var REQUIRED_HEADERS = Object.freeze(["Date", "Time", "X", "Y", "Z", "Battery"]);
 var MAXIMUM_ROWS = 20000;
+var SENSOR_READ_CHUNK_ROWS = 20000;
 var TELEMETRY_ACTION = "appendTelemetry";
 var TELEMETRY_BATCH_ACTION = "appendTelemetryBatch";
 var TELEMETRY_BATCH_MIN_RECORDS = 3;
@@ -11,7 +12,7 @@ var DEDUP_HEADERS = Object.freeze(["Key", "Status", "TargetRow", "Fingerprint", 
 // Fire-and-Forget co the tao nhieu Web App execution cung luc. Cho lock du lau
 // de request khong bi mat chi vi Master khong doc response BUSY.
 var TELEMETRY_LOCK_TIMEOUT_MS = 120000;
-var TELEMETRY_SERVICE_VERSION = "tower-telemetry-v7-sheet-email-reminders";
+var TELEMETRY_SERVICE_VERSION = "tower-telemetry-v8-latest-history";
 
 var EMAILJS_API_URL = "https://api.emailjs.com/api/v1.0/email/send";
 var EMAIL_ALERT_ENABLED_PROPERTY = "EMAIL_ALERT_ENABLED";
@@ -194,12 +195,11 @@ function doPost(event) {
       return jsonResponse_({
         ok: true,
         data: [],
-        meta: { received: 0, accepted: 0, rejected: 0, towerId: resolvedTowerId }
+        meta: { received: 0, accepted: 0, rejected: 0, truncated: false, towerId: resolvedTowerId }
       });
     }
 
-    var values = sheet.getRange(1, 1, Math.min(lastRow, MAXIMUM_ROWS + 1), lastColumn).getValues();
-    var indexes = resolveHeaderIndexes_(values[0]);
+    var indexes = resolveHeaderIndexes_(sheet.getRange(1, 1, 1, lastColumn).getValues()[0]);
     if (!indexes) {
       return jsonResponse_({
         ok: false,
@@ -209,27 +209,17 @@ function doPost(event) {
     }
 
     var timeZone = spreadsheet.getSpreadsheetTimeZone() || Session.getScriptTimeZone() || "Asia/Ho_Chi_Minh";
-    var data = [];
-    var rejected = 0;
-    for (var rowIndex = 1; rowIndex < values.length; rowIndex += 1) {
-      if (isBlankRow_(values[rowIndex], indexes)) {
-        continue;
-      }
-      var normalized = normalizeRow_(values[rowIndex], indexes, timeZone);
-      if (normalized) {
-        data.push(normalized);
-      } else {
-        rejected += 1;
-      }
-    }
+    var snapshot = loadLatestSensorRows_(sheet, lastRow, indexes, timeZone);
 
     return jsonResponse_({
       ok: true,
-      data: data,
+      data: snapshot.data,
       meta: {
-        received: data.length + rejected,
-        accepted: data.length,
-        rejected: rejected,
+        received: snapshot.validRows + snapshot.rejected,
+        accepted: snapshot.data.length,
+        rejected: snapshot.rejected,
+        omitted: snapshot.validRows - snapshot.data.length,
+        truncated: snapshot.truncated,
         towerId: resolvedTowerId
       }
     });
@@ -241,6 +231,73 @@ function doPost(event) {
       error: "Sensor data is temporarily unavailable."
     });
   }
+}
+
+function loadLatestSensorRows_(sheet, lastRow, indexes, timeZone) {
+  var columns = REQUIRED_HEADERS.map(function (header) { return indexes[header]; });
+  var firstColumn = Math.min.apply(null, columns);
+  var lastColumn = Math.max.apply(null, columns);
+  var readIndexes = {};
+  REQUIRED_HEADERS.forEach(function (header) { readIndexes[header] = indexes[header] - firstColumn; });
+  var newest = new Map();
+  // A min heap holds only the newest MAXIMUM_ROWS timestamps. Scanning all
+  // chunks handles reused blanks/imports without retaining the whole Sheet.
+  var timestamps = [];
+  var validRows = 0;
+  var rejected = 0;
+  var truncated = false;
+  for (var startRow = 2; startRow <= lastRow; startRow += SENSOR_READ_CHUNK_ROWS) {
+    var rowCount = Math.min(SENSOR_READ_CHUNK_ROWS, lastRow - startRow + 1);
+    var values = sheet.getRange(startRow, firstColumn + 1, rowCount, lastColumn - firstColumn + 1).getValues();
+    for (var rowIndex = 0; rowIndex < values.length; rowIndex += 1) {
+      if (isBlankRow_(values[rowIndex], readIndexes)) continue;
+      var normalized = normalizeRow_(values[rowIndex], readIndexes, timeZone);
+      if (!normalized) {
+        rejected += 1;
+        continue;
+      }
+      validRows += 1;
+      var timestamp = normalized.Date + " " + normalized.Time;
+      if (newest.has(timestamp)) {
+        // Match browser/reminder behavior: the last valid physical duplicate wins.
+        newest.set(timestamp, normalized);
+      } else if (timestamps.length < MAXIMUM_ROWS) {
+        newest.set(timestamp, normalized);
+        var position = timestamps.length;
+        timestamps.push(timestamp);
+        while (position > 0) {
+          var parent = Math.floor((position - 1) / 2);
+          if (timestamps[parent] <= timestamp) break;
+          timestamps[position] = timestamps[parent];
+          position = parent;
+        }
+        timestamps[position] = timestamp;
+      } else if (timestamp > timestamps[0]) {
+        truncated = true;
+        newest.delete(timestamps[0]);
+        newest.set(timestamp, normalized);
+        var position = 0;
+        while (position * 2 + 1 < timestamps.length) {
+          var child = position * 2 + 1;
+          if (child + 1 < timestamps.length && timestamps[child + 1] < timestamps[child]) child += 1;
+          if (timestamp <= timestamps[child]) break;
+          timestamps[position] = timestamps[child];
+          position = child;
+        }
+        timestamps[position] = timestamp;
+      } else {
+        // The timestamp is absent from the retained set and the set is full.
+        // Duplicate replacements above never imply missing history.
+        truncated = true;
+      }
+    }
+  }
+  return {
+    data: timestamps.sort().map(function (timestamp) { return newest.get(timestamp); }),
+    validRows: validRows,
+    rejected: rejected,
+    truncated: truncated
+  };
 }
 
 function appendTelemetry_(request, sheetId) {

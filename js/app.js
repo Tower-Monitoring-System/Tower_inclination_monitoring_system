@@ -1,16 +1,16 @@
-import { Dashboard } from "./components/Dashboard.js?v=20260902.4";
+import { Dashboard } from "./components/Dashboard.js?v=20261007.1";
 import { DASHBOARD_ACTION } from "./core/constants.js";
-import { AlertsPage } from "./pages/alertsPage.js?v=20260902.1";
-import { ListPage } from "./pages/listPage.js?v=20260902.1";
+import { AlertsPage } from "./pages/alertsPage.js?v=20261007.1";
+import { ListPage } from "./pages/listPage.js?v=20261007.1";
 import { SettingsPage } from "./pages/settingsPage.js?v=20260902.1";
-import { TowersPage } from "./pages/towersPage.js?v=20260902.4";
-import { AlertService } from "./services/alertService.js?v=20260902.2";
+import { TowersPage } from "./pages/towersPage.js?v=20261007.1";
+import { AlertService } from "./services/alertService.js?v=20261007.1";
 import { AuthService } from "./services/authService.js?v=20260901.1";
 import { Esp32SettingsAdapter } from "./services/esp32SettingsAdapter.js?v=20260902.4";
-import { MqttService } from "./services/mqttService.js?v=20260823.8";
-import { SensorDataService } from "./services/sensorDataService.js?v=20260901.1";
+import { MqttService } from "./services/mqttService.js?v=20261007.1";
+import { SensorDataService } from "./services/sensorDataService.js?v=20261007.1";
 import { SettingsService } from "./services/settingsService.js?v=20260902.4";
-import { TowerHistoryService } from "./services/towerHistoryService.js?v=20260824.2";
+import { TowerHistoryService } from "./services/towerHistoryService.js?v=20261007.1";
 import { TowerRegistryService } from "./services/towerRegistryService.js?v=20260824.1";
 
 let dashboard;
@@ -61,6 +61,7 @@ function handleDashboardAction(event) {
       break;
     case DASHBOARD_ACTION.SIGN_OUT:
       closePageControllers();
+      sensorDataService?.destroy();
       void authService.signOut();
       break;
     default:
@@ -74,11 +75,10 @@ function handleMqttPacket(rawPacket) {
     window.console.warn("An MQTT notification without a valid stationId was ignored.");
     return;
   }
-  if (towersPage?.getSelectedTowerId() === towerId) {
-    void towersPage.refreshHistoricalReadings({ automatic: true });
-  }
-  void alertsPage?.refresh({ automatic: true });
-  void listPage?.refresh({ automatic: true });
+  // A notification invalidates this tower's snapshot once. Shared subscribers
+  // receive the result even when their dashboard page is not currently open.
+  void sensorDataService?.fetchReadings({ towerId, force: true })
+    .catch((error) => window.console.warn("MQTT-triggered sensor refresh failed.", error));
 }
 
 function registerServiceEvents() {
@@ -96,6 +96,7 @@ function destroyApplication() {
   alertsPage?.destroy();
   settingsPage?.destroy();
   settingsService?.destroy();
+  sensorDataService?.destroy();
   mqttService?.destroy();
 }
 
@@ -130,8 +131,7 @@ async function bootstrap() {
       settingsService,
       towerRegistryService
     });
-    const alertsSensorDataService = new SensorDataService();
-    const alertService = new AlertService(alertsSensorDataService, { settingsService });
+    const alertService = new AlertService(sensorDataService, { settingsService });
     alertsPage = new AlertsPage(alertService, {
       onToast: (message, type) => dashboard.showToast(message, type),
       onSummaryChange: (summary) => dashboard.updateAlertSummary(summary),
@@ -140,7 +140,7 @@ async function bootstrap() {
     });
     towersPage = new TowersPage({
       onToast: (message, type) => dashboard.showToast(message, type),
-      historyService: new TowerHistoryService(new SensorDataService()),
+      historyService: new TowerHistoryService(sensorDataService),
       towerRegistryService,
       settingsService
     });
@@ -164,6 +164,7 @@ async function bootstrap() {
       authService.onAuthStateChange((event) => {
         if (event === "SIGNED_OUT") {
           closePageControllers();
+          sensorDataService?.destroy();
           authService.redirect("sign-in.html");
         }
       })

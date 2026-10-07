@@ -1,4 +1,4 @@
-import { APP_CONFIG } from "../core/config.js";
+import { APP_CONFIG } from "../core/config.js?v=20261007.1";
 import { DASHBOARD_ACTION } from "../core/constants.js";
 import { AlertPanel } from "./AlertPanel.js?v=20260824.1";
 

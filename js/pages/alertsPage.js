@@ -1,4 +1,4 @@
-import { ALERT_CONFIG } from "../core/config.js";
+import { ALERT_CONFIG } from "../core/config.js?v=20261007.1";
 import { ALERT_SEVERITY, ALERT_STATUS, ALERT_TYPE } from "../core/constants.js";
 import {
   filterAndSortAlerts,
@@ -167,7 +167,7 @@ export class AlertsPage {
     if (this.refreshPromise) {
       return;
     }
-    void this.refresh({ automatic: this.alerts.length > 0 });
+    void this.refresh({ automatic: true });
   }
 
   close() {
@@ -223,12 +223,14 @@ export class AlertsPage {
 
   cancelRefresh() {
     this.requestSequence += 1;
-    this.service.cancelActiveRequest();
+    this.dataRequestController?.abort();
+    this.dataRequestController = null;
     this.refreshPromise = null;
     this.loading = false;
   }
 
   resetTowerData() {
+    this.unsubscribeReadings?.();
     this.clearPollingTimer();
     this.cancelRefresh();
     this.alerts = [];
@@ -238,6 +240,20 @@ export class AlertsPage {
     this.error = null;
     this.lastUpdatedAt = 0;
     this.onSummaryChange(this.summary);
+    const towerId = this.selectedTowerId;
+    this.unsubscribeReadings = this.service.subscribe?.(towerId, update => {
+      if (towerId !== this.selectedTowerId) return;
+      if (update.result) this.acceptAlerts(update.result);
+      this.error = update.error?.message || null;
+      this.render();
+    });
+  }
+
+  acceptAlerts(result) {
+    this.alerts = result.alerts;
+    this.summary = result.summary || summarizeAlerts(this.alerts);
+    this.onSummaryChange(this.summary);
+    this.lastUpdatedAt = Date.parse(result.meta?.generatedAt) || Date.now();
   }
 
   async refresh({ automatic = false } = {}) {
@@ -252,6 +268,8 @@ export class AlertsPage {
 
     const towerId = this.selectedTowerId;
     const requestSequence = ++this.requestSequence;
+    const controller = new AbortController();
+    this.dataRequestController = controller;
     this.clearPollingTimer();
     this.loading = true;
     this.error = null;
@@ -259,14 +277,11 @@ export class AlertsPage {
 
     const refreshPromise = (async () => {
       try {
-        const result = await this.service.fetchAlerts({ towerId });
+        const result = await this.service.fetchAlerts({ towerId, signal: controller.signal, force: !automatic });
         if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
           return;
         }
-        this.alerts = [...result.alerts];
-        this.summary = result.summary || summarizeAlerts(this.alerts);
-        this.onSummaryChange(this.summary);
-        this.lastUpdatedAt = Date.parse(result.meta?.generatedAt) || Date.now();
+        this.acceptAlerts(result);
         this.error = null;
 
         if (result.invalidRows?.length) {
@@ -284,11 +299,6 @@ export class AlertsPage {
         }
         if (requestSequence !== this.requestSequence || towerId !== this.selectedTowerId) {
           return;
-        }
-        if (error?.status === 404) {
-          this.alerts = [];
-          this.summary = summarizeAlerts([]);
-          this.onSummaryChange(this.summary);
         }
         const timedOut = error?.name === "TimeoutError";
         this.error = timedOut
@@ -605,6 +615,7 @@ export class AlertsPage {
 
   schedulePolling() {
     this.clearPollingTimer();
+    if (this.service.subscribe) { this.renderPollingStatus(); return; }
     if (!this.selectedTowerId) {
       this.renderPollingStatus();
       return;
@@ -652,6 +663,7 @@ export class AlertsPage {
   }
 
   handleVisibilityChange() {
+    if (this.service.subscribe) { this.renderPollingStatus(); return; }
     if (!this.selectedTowerId) {
       return;
     }
@@ -680,6 +692,7 @@ export class AlertsPage {
     this.close();
     this.abortController.abort();
     this.unsubscribeTowerRegistry?.();
+    this.unsubscribeReadings?.();
     this.service.destroy();
   }
 }

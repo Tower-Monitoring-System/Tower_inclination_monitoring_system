@@ -1,4 +1,4 @@
-import { ORIENTATION_CONFIG } from "../core/config.js?v=20260902.2";
+import { ORIENTATION_CONFIG } from "../core/config.js?v=20261007.1";
 
 const AXES = Object.freeze(["x", "y", "z"]);
 const DIRECTION_LABELS = Object.freeze([

@@ -1,4 +1,4 @@
-import { MQTT_CONFIG } from "../core/config.js";
+import { MQTT_CONFIG } from "../core/config.js?v=20261007.1";
 import { CONNECTION_STATUS } from "../core/constants.js";
 
 function createEmitter() {

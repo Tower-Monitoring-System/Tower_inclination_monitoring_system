@@ -4,6 +4,7 @@ export class TowerHistoryService {
       throw new TypeError("TowerHistoryService requires a SensorDataService instance.");
     }
     this.sensorDataService = sensorDataService;
+    this.derived = new WeakMap();
   }
 
   async fetchReadings(towerId, options = {}) {
@@ -12,8 +13,15 @@ export class TowerHistoryService {
       throw new TypeError("A Tower ID is required to load Google Sheet data.");
     }
     const result = await this.sensorDataService.fetchReadings({ ...options, towerId: requestedTowerId });
-    const readings = result.readings.map((reading) => Object.freeze({
-      stationId: requestedTowerId,
+    return this.derive(requestedTowerId, result);
+  }
+
+  derive(towerId, result) {
+    let byTower = this.derived.get(result.readings);
+    if (!byTower) { byTower = new Map(); this.derived.set(result.readings, byTower); }
+    let readings = byTower.get(towerId);
+    if (!readings) readings = Object.freeze(result.readings.map((reading) => Object.freeze({
+      stationId: towerId,
       tiltX: reading.x,
       tiltY: reading.y,
       tiltZ: reading.z,
@@ -21,7 +29,8 @@ export class TowerHistoryService {
       date: reading.date,
       time: reading.time,
       timestamp: localSensorTimestamp(reading.date, reading.time)
-    }));
+    })));
+    byTower.set(towerId, readings);
 
     return Object.freeze({
       readings: Object.freeze(readings),
@@ -30,12 +39,14 @@ export class TowerHistoryService {
     });
   }
 
-  cancelActiveRequest() {
-    this.sensorDataService.cancelActiveRequest();
+  subscribe(towerId, listener) {
+    return this.sensorDataService.subscribe(towerId, update => {
+      listener({ ...update, result: update.result ? this.derive(towerId, update.result) : null });
+    });
   }
 
   destroy() {
-    this.sensorDataService.destroy();
+    this.derived = new WeakMap();
   }
 }
 
